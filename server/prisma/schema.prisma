@@ -1,0 +1,70 @@
+// Prisma schema — Rophe Specialist Care
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Users (staff & doctors) ----------
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  name         String
+  role         Role          @default(FRONT_DESK)
+  createdAt    DateTime      @default(now())
+  appointments Appointment[] @relation("DoctorAppointments")
+}
+
+enum Role {
+  ADMIN
+  FRONT_DESK
+  DOCTOR
+}
+
+// ---------- Patients ----------
+model Patient {
+  id               String        @id @default(cuid())
+  name             String
+  phone            String
+  whatsapp         String?
+  email            String?
+  dateOfBirth      DateTime?
+  preferredChannel Channel       @default(WHATSAPP)
+  notes            String?
+  createdAt        DateTime      @default(now())
+  appointments     Appointment[]
+}
+
+enum Channel {
+  WHATSAPP
+  SMS
+  EMAIL
+}
+
+// ---------- Appointments ----------
+model Appointment {
+  id          String            @id @default(cuid())
+  patient     Patient           @relation(fields: [patientId], references: [id])
+  patientId   String
+  doctor      User?             @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  doctorId    String?
+  scheduledAt DateTime
+  type        String
+  status      AppointmentStatus @default(BOOKED)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+enum AppointmentStatus {
+  BOOKED
+  CONFIRMED
+  ATTENDED
+  MISSED
+  RESCHEDULED
+  CANCELLED
+}

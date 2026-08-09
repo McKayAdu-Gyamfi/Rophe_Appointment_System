@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+/* ============================================================
+   ROPHE SPECIALIST CARE — DESIGN SYSTEM
+   Palette from the Rophe logo (medical blue + red cross),
+   with healthcare-standard semantic colors.
+   ============================================================ */
+
+@theme {
+  --color-rophe-blue: #1e5aa8;
+  --color-rophe-blue-light: #4a82c4;
+  --color-rophe-blue-tint: #eaf2fb;
+  --color-rophe-blue-dark: #164683;
+  --color-rophe-red: #d64545;
+
+  --color-success: #2e9e7b;
+  --color-warning: #e0a54b;
+  --color-danger: #d64545;
+
+  --color-ink: #0f1b2d;
+  --color-slate: #5b6b7f;
+  --color-muted: #8fa0b3;
+  --color-border: #e3e9f0;
+  --color-surface: #ffffff;
+  --color-canvas: #f5f8fc;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --radius-card: 12px;
+  --radius-btn: 8px;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-font-smoothing: antialiased; }
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  margin: 0;
+}
+::selection { background: var(--color-rophe-blue); color: #fff; }
+:focus-visible { outline: 2px solid var(--color-rophe-blue); outline-offset: 2px; }
