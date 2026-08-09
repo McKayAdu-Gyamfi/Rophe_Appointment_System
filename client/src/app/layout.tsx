@@ -1,21 +1,25 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
-
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
+import './globals.css';
+import type { Metadata } from 'next';
+import { RoleProvider } from '@/lib/role-context';
+import { AppShell } from '@/components/app-shell';
 
 export const metadata: Metadata = {
-  title: "Rophe Specialist Care — Appointments",
-  description:
-    "Appointment scheduling and patient follow-up for Rophe Specialist Care, Accra.",
+  title: 'Rophe Specialist Care',
+  description: 'Patient engagement & appointment platform',
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{ children: React.ReactNode }>) {
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="en" className={inter.variable}>
-      <body>{children}</body>
+    <html lang="en">
+      <body>
+        <RoleProvider>
+          <AppShell>{children}</AppShell>
+        </RoleProvider>
+      </body>
     </html>
   );
 }
