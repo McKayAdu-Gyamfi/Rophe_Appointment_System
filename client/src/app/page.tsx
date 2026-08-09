@@ -2,72 +2,60 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   CalendarDays,
   CheckCircle2,
   Clock,
+  Loader2,
+  Send,
   TrendingUp,
   UserRound,
   XCircle,
   ArrowRight,
   Phone,
 } from "lucide-react";
-import { getAppointments, getPatients } from "@/lib/api";
-import type { Appointment, Patient } from "@/lib/types";
-import { APPOINTMENT_STATUS_STYLES } from "@/lib/status-styles";
+import { getAppointments, getMessages, getPatients, sendMessage } from "@/lib/api";
+import type { Appointment, Message, Patient } from "@/lib/types";
+import { APPOINTMENT_STATUS_STYLES, CHANNEL_STYLES } from "@/lib/status-styles";
+import { dateKey, fmtDate, fmtTime, startOfWeek, endOfWeek } from "@/lib/format";
+import { AppointmentDetailDialog } from "@/components/appointment-detail-dialog";
+import { useRole } from "@/lib/role-context";
 import { cn } from "@/lib/utils";
-
-// --- date helpers (no external dep) ---------------------------------------
-
-function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-
-function startOfWeek(d: Date): Date {
-  const x = startOfDay(d);
-  x.setDate(x.getDate() - x.getDay()); // Sunday-start
-  return x;
-}
-
-function endOfWeek(d: Date): Date {
-  const x = startOfWeek(d);
-  x.setDate(x.getDate() + 6);
-  x.setHours(23, 59, 59, 999);
-  return x;
-}
-
-function fmtDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
-}
-
-function fmtTime(t: string): string {
-  const [h, m] = t.split(":").map(Number);
-  const ampm = h >= 12 ? "PM" : "AM";
-  const hh = h % 12 === 0 ? 12 : h % 12;
-  return `${hh}:${String(m).padStart(2, "0")} ${ampm}`;
-}
 
 // --- component -------------------------------------------------------------
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const { role } = useRole();
+  const canAct = role === "front-desk";
+
+  // "/" is the front-desk dashboard. A doctor arriving here directly (typed
+  // URL, bookmark, restored role from localStorage) belongs on their own.
+  useEffect(() => {
+    if (role === "doctor") router.replace("/doctor");
+  }, [role, router]);
+
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<Appointment | null>(null);
+  const [sendingId, setSendingId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const [appts, pts] = await Promise.all([getAppointments(), getPatients()]);
+      const [appts, pts, msgs] = await Promise.all([
+        getAppointments(),
+        getPatients(),
+        getMessages(),
+      ]);
       if (!active) return;
       setAppointments(appts);
       setPatients(pts);
+      setMessages(msgs);
       setLoading(false);
     })();
     return () => {
@@ -86,38 +74,29 @@ export default function DashboardPage() {
     [patientMap],
   );
 
-  const today = useMemo(() => startOfDay(new Date()), []);
-  const weekStart = useMemo(() => startOfWeek(new Date()), []);
-  const weekEnd = useMemo(() => endOfWeek(new Date()), []);
-
-  const byDate = useCallback(
-    (a: Appointment) => {
-      const d = startOfDay(new Date(a.date)).getTime();
-      return d;
-    },
-    [],
-  );
+  // Dates compare as "YYYY-MM-DD" strings — same convention as the calendar,
+  // and immune to the UTC-shift that trips up Date arithmetic.
+  const todayKey = useMemo(() => dateKey(new Date()), []);
+  const weekStartKey = useMemo(() => dateKey(startOfWeek(new Date())), []);
+  const weekEndKey = useMemo(() => dateKey(endOfWeek(new Date())), []);
 
   const todays = useMemo(
     () =>
       appointments
-        .filter((a) => startOfDay(new Date(a.date)).getTime() === today.getTime())
+        .filter((a) => a.date === todayKey)
         .sort((a, b) => a.time.localeCompare(b.time)),
-    [appointments, today],
+    [appointments, todayKey],
   );
 
   const upcomingThisWeek = useMemo(
     () =>
       appointments
-        .filter((a) => {
-          const t = new Date(a.date).getTime();
-          return t > today.getTime() && t >= weekStart.getTime() && t <= weekEnd.getTime();
-        })
+        .filter((a) => a.date > todayKey && a.date <= weekEndKey)
         .filter((a) => a.status === "booked" || a.status === "confirmed")
         .sort((a, b) =>
           a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date),
         ),
-    [appointments, today, weekStart, weekEnd],
+    [appointments, todayKey, weekEndKey],
   );
 
   const missedVisits = useMemo(
@@ -130,27 +109,66 @@ export default function DashboardPage() {
 
   // Attendance rate: attended / (attended + missed) this week.
   const attendanceRate = useMemo(() => {
-    const inWeek = appointments.filter((a) => {
-      const t = new Date(a.date).getTime();
-      return t >= weekStart.getTime() && t <= weekEnd.getTime();
-    });
+    const inWeek = appointments.filter((a) => a.date >= weekStartKey && a.date <= weekEndKey);
     const attended = inWeek.filter((a) => a.status === "attended").length;
     const missed = inWeek.filter((a) => a.status === "missed").length;
     const denom = attended + missed;
     return denom === 0 ? 0 : Math.round((attended / denom) * 100);
-  }, [appointments, weekStart, weekEnd]);
+  }, [appointments, weekStartKey, weekEndKey]);
 
   const bookedToday = useMemo(
-    () =>
-      appointments.filter(
-        (a) =>
-          startOfDay(new Date(a.date)).getTime() === today.getTime() &&
-          a.status === "booked",
-      ).length,
-    [appointments, today],
+    () => appointments.filter((a) => a.date === todayKey && a.status === "booked").length,
+    [appointments, todayKey],
   );
 
-  const pendingFollowUps = missedVisits.slice(0, 6);
+  // A missed visit counts as handled once a follow-up message exists for it —
+  // that's what keeps this an action list rather than a copy of the one above.
+  const followedUpIds = useMemo(() => {
+    const ids = new Set<string>();
+    messages.forEach((m) => {
+      if (m.type === "follow-up" && m.appointmentId) ids.add(m.appointmentId);
+    });
+    return ids;
+  }, [messages]);
+
+  const pendingFollowUps = useMemo(
+    () => missedVisits.filter((a) => !followedUpIds.has(a.id)),
+    [missedVisits, followedUpIds],
+  );
+
+  const handleStatusChanged = useCallback((updated: Appointment) => {
+    setAppointments((prev) => prev.map((a) => (a.id === updated.id ? { ...updated } : a)));
+    setSelected({ ...updated });
+  }, []);
+
+  const sendFollowUp = useCallback(
+    async (appointment: Appointment) => {
+      const patient = patientMap.get(appointment.patientId);
+      if (!patient) return;
+
+      setSendingId(appointment.id);
+      try {
+        const preview = `We missed you on ${fmtDate(appointment.date)}. Please call the clinic to rebook your ${appointment.appointmentType.toLowerCase()}.`;
+        const message = await sendMessage({
+          patientId: patient.id,
+          appointmentId: appointment.id,
+          channel: patient.preferredChannel,
+          type: "follow-up",
+          contentPreview: preview,
+        });
+        setMessages((prev) => [message, ...prev]);
+        toast.success(
+          `Follow-up sent via ${CHANNEL_STYLES[patient.preferredChannel].label}`,
+          { description: `${patient.fullName} — ${preview}` },
+        );
+      } catch {
+        toast.error("Couldn't send that follow-up. Try again.");
+      } finally {
+        setSendingId(null);
+      }
+    },
+    [patientMap],
+  );
 
   if (loading) {
     return (
@@ -229,6 +247,7 @@ export default function DashboardPage() {
                     <AppointmentRow
                       appt={a}
                       patientName={patientName(a.patientId)}
+                      onSelect={() => setSelected(a)}
                     />
                   </li>
                 ))}
@@ -253,6 +272,7 @@ export default function DashboardPage() {
                       appt={a}
                       patientName={patientName(a.patientId)}
                       showDate
+                      onSelect={() => setSelected(a)}
                     />
                   </li>
                 ))}
@@ -277,6 +297,8 @@ export default function DashboardPage() {
                       appt={a}
                       patientName={patientName(a.patientId)}
                       showDate
+                      onSelect={() => setSelected(a)}
+                      tag={followedUpIds.has(a.id) ? "Followed up" : undefined}
                     />
                   </li>
                 ))}
@@ -292,37 +314,57 @@ export default function DashboardPage() {
             actionLabel="Message log"
           >
             {pendingFollowUps.length === 0 ? (
-              <Empty text="Nothing to follow up on." />
+              <Empty
+                text={
+                  missedVisits.length === 0
+                    ? "Nothing to follow up on."
+                    : "Every missed visit has been followed up."
+                }
+              />
             ) : (
               <ul className="divide-y divide-slate-100">
                 {pendingFollowUps.map((a) => {
                   const p = patientMap.get(a.patientId);
+                  const sending = sendingId === a.id;
                   return (
                     <li key={a.id} className="flex items-center gap-3 px-4 py-3">
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-50">
                         <UserRound className="h-4 w-4 text-rose-500" />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-slate-900">
+                        <Link
+                          href={`/patients/${p?.id ?? a.patientId}`}
+                          className="truncate text-sm font-medium text-slate-900 transition hover:text-teal-700"
+                        >
                           {patientName(a.patientId)}
-                        </p>
+                        </Link>
                         <p className="truncate text-xs text-slate-500">
                           Missed {fmtDate(a.date)} · {a.appointmentType}
+                          {p && ` · ${CHANNEL_STYLES[p.preferredChannel].label}`}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
                         {p?.phone && (
-                          <span className="hidden items-center gap-1 text-xs text-slate-400 sm:inline-flex">
+                          <span className="hidden items-center gap-1 text-xs text-slate-400 lg:inline-flex">
                             <Phone className="h-3 w-3" />
                             {p.phone}
                           </span>
                         )}
-                        <Link
-                          href={`/patients/${p?.id ?? a.patientId}`}
-                          className="rounded-lg bg-teal-50 px-2.5 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100"
-                        >
-                          Follow up
-                        </Link>
+                        {canAct && (
+                          <button
+                            type="button"
+                            onClick={() => void sendFollowUp(a)}
+                            disabled={sending}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-teal-50 px-2.5 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {sending ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Send className="h-3 w-3" />
+                            )}
+                            Send follow-up
+                          </button>
+                        )}
                       </div>
                     </li>
                   );
@@ -332,6 +374,13 @@ export default function DashboardPage() {
           </Section>
         </div>
       </div>
+
+      <AppointmentDetailDialog
+        appointment={selected}
+        patient={selected ? patientMap.get(selected.patientId) : undefined}
+        onClose={() => setSelected(null)}
+        onChanged={handleStatusChanged}
+      />
     </div>
   );
 }
@@ -416,16 +465,22 @@ function AppointmentRow({
   appt,
   patientName,
   showDate,
+  onSelect,
+  tag,
 }: {
   appt: Appointment;
   patientName: string;
   showDate?: boolean;
+  /** Opens the status dialog — how staff mark an appointment missed from here. */
+  onSelect: () => void;
+  tag?: string;
 }) {
   const style = APPOINTMENT_STATUS_STYLES[appt.status];
   return (
-    <Link
-      href={`/patients/${appt.patientId}`}
-      className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-50"
+    <button
+      type="button"
+      onClick={onSelect}
+      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50"
     >
       <div className="flex w-16 shrink-0 flex-col">
         <span className="text-sm font-semibold text-slate-900">{fmtTime(appt.time)}</span>
@@ -435,7 +490,10 @@ function AppointmentRow({
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-slate-900">{patientName}</p>
-        <p className="truncate text-xs text-slate-500">{appt.appointmentType}</p>
+        <p className="truncate text-xs text-slate-500">
+          {appt.appointmentType}
+          {tag && <span className="text-teal-600"> · {tag}</span>}
+        </p>
       </div>
       <span
         className={cn(
@@ -446,7 +504,7 @@ function AppointmentRow({
         <span className={cn("h-1.5 w-1.5 rounded-full", style.dot)} />
         {style.label}
       </span>
-    </Link>
+    </button>
   );
 }
 

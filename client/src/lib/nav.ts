@@ -26,10 +26,20 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { label: "Pending Requests", href: "/requests", icon: Inbox },
   ],
   doctor: [
-    { label: "Dashboard", href: "/", icon: LayoutDashboard },
+    { label: "Dashboard", href: "/doctor", icon: LayoutDashboard },
     { label: "My Availability", href: "/doctor/availability", icon: CalendarCheck },
     { label: "My Schedule", href: "/doctor/schedule", icon: Clock },
   ],
   // Patient role has no nav — only the single patient-facing page.
   patient: [],
+};
+
+/**
+ * Where each role lands. Switching roles in the top nav routes here, so a
+ * doctor never starts on the front-desk dashboard (and vice versa).
+ */
+export const LANDING_BY_ROLE: Record<Role, string> = {
+  "front-desk": "/",
+  doctor: "/doctor",
+  patient: "/portal/appointment",
 };

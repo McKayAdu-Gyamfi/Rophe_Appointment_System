@@ -1,5 +1,6 @@
 import './globals.css';
 import type { Metadata } from 'next';
+import { Toaster } from 'sonner';
 import { RoleProvider } from '@/lib/role-context';
 import { AppShell } from '@/components/app-shell';
 
@@ -19,6 +20,8 @@ export default function RootLayout({
         <RoleProvider>
           <AppShell>{children}</AppShell>
         </RoleProvider>
+        {/* Simulated message confirmations surface here (PRD Section 6). */}
+        <Toaster position="top-right" richColors closeButton />
       </body>
     </html>
   );

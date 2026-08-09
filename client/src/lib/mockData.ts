@@ -5,7 +5,9 @@ import type {
   Message,
   PatientRequest,
   Doctor,
+  StaffUser,
 } from "./types";
+import { dateKey } from "./format";
 
 // ---------------------------------------------------------------------------
 // Doctors
@@ -13,6 +15,48 @@ import type {
 
 export const doctors: Doctor[] = [
   { id: "doc-1", fullName: "Dr. Akosua Mensah", specialty: "Specialist Physician" },
+];
+
+// ---------------------------------------------------------------------------
+// Staff accounts — demo credentials for the prototype sign-in.
+//
+// Plaintext passwords are fine here because nothing is protected: there is no
+// backend, no real patient data, and the login exists so the client can see the
+// shape of the real thing. Phase 3 replaces this with hashed credentials and a
+// server session. Patients never appear here — they reach their page by link.
+// ---------------------------------------------------------------------------
+
+export const DEMO_PASSWORD = "rophe123";
+
+export const staffUsers: StaffUser[] = [
+  {
+    id: "u-001",
+    fullName: "Abena Owusu",
+    email: "frontdesk@rophe.care",
+    password: DEMO_PASSWORD,
+    role: "front-desk",
+    staffId: "RSC-1042",
+    jobTitle: "Front-desk Staff",
+  },
+  {
+    id: "u-002",
+    fullName: "Dr. Akosua Mensah",
+    email: "dr.mensah@rophe.care",
+    password: DEMO_PASSWORD,
+    role: "doctor",
+    staffId: "RSC-0001",
+    jobTitle: "Specialist Physician",
+    doctorId: "doc-1",
+  },
+  {
+    id: "u-003",
+    fullName: "Kofi Boateng",
+    email: "reception@rophe.care",
+    password: DEMO_PASSWORD,
+    role: "front-desk",
+    staffId: "RSC-1088",
+    jobTitle: "Reception Assistant",
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -183,14 +227,15 @@ export const patients: Patient[] = [
 // Fri: morning only. Sat: closed. Sun: closed.
 // ---------------------------------------------------------------------------
 
+// A day can hold several windows (see Wednesday) — the doctor's grid writes
+// back the fewest merged ranges that cover the slots she left open. Closed days
+// simply have no rows: Sunday, Monday, and Saturday are absent below.
 export const doctorAvailability: DoctorAvailability[] = [
-  { doctorId: "doc-1", dayOfWeek: 0, startTime: "00:00", endTime: "23:59", isAvailable: false }, // Sun
-  { doctorId: "doc-1", dayOfWeek: 1, startTime: "00:00", endTime: "23:59", isAvailable: false }, // Mon — off
-  { doctorId: "doc-1", dayOfWeek: 2, startTime: "08:00", endTime: "12:00", isAvailable: true },  // Tue AM
-  { doctorId: "doc-1", dayOfWeek: 3, startTime: "08:00", endTime: "17:00", isAvailable: true },  // Wed all day
-  { doctorId: "doc-1", dayOfWeek: 4, startTime: "13:00", endTime: "17:00", isAvailable: true },  // Thu PM only
-  { doctorId: "doc-1", dayOfWeek: 5, startTime: "08:00", endTime: "12:00", isAvailable: true },  // Fri AM
-  { doctorId: "doc-1", dayOfWeek: 6, startTime: "00:00", endTime: "23:59", isAvailable: false }, // Sat — off
+  { doctorId: "doc-1", dayOfWeek: 2, startTime: "08:00", endTime: "12:00", isAvailable: true }, // Tue AM
+  { doctorId: "doc-1", dayOfWeek: 3, startTime: "08:00", endTime: "12:30", isAvailable: true }, // Wed AM
+  { doctorId: "doc-1", dayOfWeek: 3, startTime: "14:00", endTime: "17:00", isAvailable: true }, // Wed PM (lunch gap)
+  { doctorId: "doc-1", dayOfWeek: 4, startTime: "13:00", endTime: "17:00", isAvailable: true }, // Thu PM only
+  { doctorId: "doc-1", dayOfWeek: 5, startTime: "08:00", endTime: "12:00", isAvailable: true }, // Fri AM
 ];
 
 // ---------------------------------------------------------------------------
@@ -202,7 +247,7 @@ function isoOffset(daysFromToday: number): string {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   d.setDate(d.getDate() + daysFromToday);
-  return d.toISOString().slice(0, 10);
+  return dateKey(d);
 }
 
 export const appointments: Appointment[] = [
@@ -274,6 +319,31 @@ export const appointments: Appointment[] = [
     durationMinutes: 30,
     status: "missed",
     createdAt: new Date(Date.now() - 10 * 86400000).toISOString(),
+  },
+  // Missed with no follow-up logged yet — these are what populate the
+  // dashboard's "Pending follow-ups" action list on first load (PRD §5, §6.2).
+  {
+    id: "a-1010",
+    patientId: "p-004",
+    doctorId: "doc-1",
+    appointmentType: "Follow-up",
+    date: isoOffset(-2),
+    time: "09:30",
+    durationMinutes: 30,
+    status: "missed",
+    createdAt: new Date(Date.now() - 9 * 86400000).toISOString(),
+  },
+  {
+    id: "a-1011",
+    patientId: "p-013",
+    doctorId: "doc-1",
+    appointmentType: "Diabetes Review",
+    date: isoOffset(-6),
+    time: "10:30",
+    durationMinutes: 45,
+    status: "missed",
+    createdAt: new Date(Date.now() - 15 * 86400000).toISOString(),
+    notes: "Second missed visit — call before rebooking.",
   },
   // Past — rescheduled
   {

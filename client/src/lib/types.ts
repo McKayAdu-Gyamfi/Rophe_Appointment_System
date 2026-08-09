@@ -8,7 +8,11 @@ export type AppointmentStatus =
   | "confirmed"
   | "attended"
   | "missed"
-  | "rescheduled";
+  | "rescheduled"
+  // Added for the calendar's cancel action — the PRD's original five have no
+  // state for "called off in advance", and reusing "missed" would corrupt the
+  // attendance-rate stat. Flagged for client sign-off (PRD Section 8).
+  | "cancelled";
 
 export type MessageType = "confirmation" | "reminder" | "follow-up" | "birthday";
 
@@ -80,3 +84,22 @@ export interface Doctor {
   fullName: string;
   specialty: string;
 }
+
+/** Staff who sign in. Patients never have an account — they use a link. */
+export type StaffRole = Exclude<Role, "patient">;
+
+export interface StaffUser {
+  id: string;
+  fullName: string;
+  email: string;
+  /** Prototype only — plaintext seed credentials, never do this for real. */
+  password: string;
+  role: StaffRole;
+  staffId: string;
+  jobTitle: string;
+  /** Set on doctor accounts, linking to the Doctor record. */
+  doctorId?: string;
+}
+
+/** What the app keeps in session — the password never leaves the data layer. */
+export type StaffSession = Omit<StaffUser, "password">;

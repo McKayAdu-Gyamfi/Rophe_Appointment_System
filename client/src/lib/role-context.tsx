@@ -2,61 +2,106 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
-import type { Role } from "@/lib/types";
+import { signIn as apiSignIn } from "@/lib/api";
+import type { Role, StaffSession } from "@/lib/types";
 
-interface RoleContextValue {
+// ---------------------------------------------------------------------------
+// Session + role.
+//
+// Staff sign in; patients never do — they arrive by link, so "signed out" is
+// the patient role. `useRole()` keeps its original shape so every screen that
+// gates on role === "front-desk" | "doctor" carries on working unchanged.
+//
+// This is prototype auth: the session lives in localStorage and protects
+// nothing. Phase 3 swaps it for a server-issued httpOnly cookie.
+// ---------------------------------------------------------------------------
+
+interface AuthContextValue {
+  session: StaffSession | null;
   role: Role;
-  setRole: (role: Role) => void;
+  /** False until the stored session has been read — guards redirect flashes. */
+  ready: boolean;
+  signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  signOut: () => void;
 }
 
-const RoleContext = createContext<RoleContextValue | undefined>(undefined);
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-const STORAGE_KEY = "rophe.role";
-const DEFAULT_ROLE: Role = "front-desk";
+const STORAGE_KEY = "rophe.session";
+
+function readStoredSession(): StaffSession | null {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StaffSession;
+    return parsed?.role === "front-desk" || parsed?.role === "doctor" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 export function RoleProvider({ children }: { children: ReactNode }) {
-  const [role, setRoleState] = useState<Role>(DEFAULT_ROLE);
+  const [session, setSession] = useState<StaffSession | null>(null);
+  const [ready, setReady] = useState(false);
 
-  // Hydrate from localStorage once on mount (no flash of wrong role).
+  // Reading localStorage during render would break SSR hydration, so the
+  // session starts empty and fills in after mount.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSession(readStoredSession());
+    setReady(true);
+  }, []);
+
+  const signIn = useCallback(async (email: string, password: string) => {
+    const result = await apiSignIn({ email, password });
+    if (!result.ok) return { ok: false as const, error: result.error };
+
+    setSession(result.session);
     try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored === "front-desk" || stored === "doctor" || stored === "patient") {
-        setRoleState(stored);
-      }
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(result.session));
     } catch {
       // ignore — localStorage unavailable
     }
+    return { ok: true as const };
   }, []);
 
-  const value = useMemo<RoleContextValue>(
+  const signOut = useCallback(() => {
+    setSession(null);
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const value = useMemo<AuthContextValue>(
     () => ({
-      role,
-      setRole: (next: Role) => {
-        setRoleState(next);
-        try {
-          window.localStorage.setItem(STORAGE_KEY, next);
-        } catch {
-          // ignore
-        }
-      },
+      session,
+      role: session?.role ?? "patient",
+      ready,
+      signIn,
+      signOut,
     }),
-    [role],
+    [session, ready, signIn, signOut],
   );
 
-  return <RoleContext.Provider value={value}>{children}</RoleContext.Provider>;
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export function useRole(): RoleContextValue {
-  const ctx = useContext(RoleContext);
+export function useRole(): AuthContextValue {
+  const ctx = useContext(AuthContext);
   if (!ctx) {
     throw new Error("useRole must be used inside a RoleProvider");
   }
   return ctx;
 }
+
+/** Alias that reads better at call sites that care about the session. */
+export const useAuth = useRole;

@@ -1,86 +1,122 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useState } from "react";
-import { ChevronDown, UserRound } from "lucide-react";
-import { useRole } from "@/lib/role-context";
-import type { Role } from "@/lib/types";
+import { useRouter } from "next/navigation";
+import { ChevronDown, ExternalLink, LogIn, LogOut } from "lucide-react";
+import { CLINIC } from "@/lib/clinic";
+import { useAuth } from "@/lib/role-context";
+import { LANDING_BY_ROLE } from "@/lib/nav";
+import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const ROLE_LABELS: Record<Role, string> = {
-  "front-desk": "Front-desk Staff",
-  doctor: "Doctor",
-  patient: "Patient",
-};
-
 export function TopNav() {
-  const { role, setRole } = useRole();
+  const { session, role, signOut } = useAuth();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+
+  function handleSignOut() {
+    setOpen(false);
+    signOut();
+    router.replace("/login");
+  }
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link href="/" className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-600 text-white">
-            <span className="text-sm font-bold">R</span>
-          </span>
-          <span className="text-base font-semibold text-slate-900">
-            Rophe Specialist Care
+        <Link href={session ? LANDING_BY_ROLE[role] : "/login"} className="flex items-center gap-2.5">
+          <Image
+            src={CLINIC.logo}
+            alt=""
+            width={240}
+            height={240}
+            priority
+            className="h-9 w-9 shrink-0 object-contain"
+          />
+          {/* Wordmark is in the logo, but it's unreadable at 36px — keep the
+              text alongside, and hide it on the narrowest screens. */}
+          <span className="hidden text-base font-semibold text-slate-900 sm:inline">
+            {CLINIC.name}
           </span>
         </Link>
 
-        {/* Role switcher — no real auth, client-side state only */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            onBlur={() => setTimeout(() => setOpen(false), 150)}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500"
-            aria-haspopup="listbox"
-            aria-expanded={open}
-          >
-            <UserRound className="h-4 w-4 text-teal-600" />
-            <span className="hidden sm:inline">Viewing as:</span>
-            <span className="font-semibold text-slate-900">{ROLE_LABELS[role]}</span>
-            <ChevronDown
-              className={cn(
-                "h-4 w-4 text-slate-400 transition-transform",
-                open && "rotate-180",
-              )}
-            />
-          </button>
-
-          {open && (
-            <ul
-              role="listbox"
-              className="absolute right-0 mt-2 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+        {session ? (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              onBlur={() => setTimeout(() => setOpen(false), 150)}
+              className="inline-flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white py-1.5 pl-1.5 pr-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-400"
+              aria-haspopup="menu"
+              aria-expanded={open}
             >
-              {(Object.keys(ROLE_LABELS) as Role[]).map((r) => (
-                <li key={r}>
-                  <button
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      setRole(r);
-                      setOpen(false);
-                    }}
-                    className={cn(
-                      "flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition-colors",
-                      role === r
-                        ? "bg-teal-50 font-semibold text-teal-700"
-                        : "text-slate-700 hover:bg-slate-50",
-                    )}
-                  >
-                    {ROLE_LABELS[r]}
-                    {role === r && (
-                      <span className="h-2 w-2 rounded-full bg-teal-600" aria-hidden />
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-teal-600 text-[11px] font-semibold text-white">
+                {initials(session.fullName)}
+              </span>
+              <span className="hidden text-left sm:block">
+                <span className="block text-xs font-semibold leading-tight text-slate-900">
+                  {session.fullName}
+                </span>
+                <span className="block text-[11px] leading-tight text-slate-500">
+                  {session.jobTitle}
+                </span>
+              </span>
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 text-slate-400 transition-transform",
+                  open && "rotate-180",
+                )}
+              />
+            </button>
+
+            {open && (
+              <div
+                role="menu"
+                className="absolute right-0 mt-2 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
+              >
+                <div className="border-b border-slate-100 px-4 py-3">
+                  <p className="text-sm font-semibold text-slate-900">{session.fullName}</p>
+                  <p className="truncate text-xs text-slate-500">{session.email}</p>
+                  <p className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-medium text-teal-700">
+                    {session.jobTitle} · {session.staffId}
+                  </p>
+                </div>
+
+                {/* Prototype convenience: jump to what a patient sees. */}
+                <Link
+                  href="/portal/appointment"
+                  onMouseDown={() => setOpen(false)}
+                  className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 transition hover:bg-slate-50"
+                >
+                  <ExternalLink className="h-4 w-4 text-slate-400" />
+                  Preview patient view
+                </Link>
+
+
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleSignOut();
+                  }}
+                  className="flex w-full items-center gap-2.5 border-t border-slate-100 px-4 py-2.5 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+                >
+                  <LogOut className="h-4 w-4 text-slate-400" />
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <Link
+            href="/login"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            <LogIn className="h-4 w-4 text-slate-400" />
+            Staff sign in
+          </Link>
+        )}
       </div>
     </header>
   );
