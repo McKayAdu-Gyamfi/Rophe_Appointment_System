@@ -84,15 +84,17 @@ export function TopNav() {
                 </div>
 
                 {/* Prototype convenience: jump to what a patient sees. */}
+                {/* Close on click, not mousedown — closing on mousedown unmounts
+                    the anchor before mouseup, so no click fires and the link
+                    never navigates. */}
                 <Link
                   href="/portal/appointment"
-                  onMouseDown={() => setOpen(false)}
+                  onClick={() => setOpen(false)}
                   className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 transition hover:bg-slate-50"
                 >
                   <ExternalLink className="h-4 w-4 text-slate-400" />
                   Preview patient view
                 </Link>
-
 
                 <button
                   type="button"
