@@ -87,6 +87,22 @@ const config: Config = {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      keyframes: {
+        float: {
+          "0%, 100%": { transform: "translate(0, 0)" },
+          "33%": { transform: "translate(-150px, 200px)" },
+          "66%": { transform: "translate(200px, -150px)" },
+        },
+        "float-alt": {
+          "0%, 100%": { transform: "translate(0, 0)" },
+          "33%": { transform: "translate(200px, -200px)" },
+          "66%": { transform: "translate(-150px, 150px)" },
+        },
+      },
+      animation: {
+        float: "float 20s ease-in-out infinite",
+        "float-alt": "float-alt 25s ease-in-out infinite",
+      },
     },
   },
   plugins: [tailwindcssAnimate],

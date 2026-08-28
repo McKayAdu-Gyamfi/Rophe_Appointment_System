@@ -72,17 +72,17 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
+    <div className="grid h-[100dvh] w-full overflow-hidden lg:grid-cols-2">
       {/* Brand panel — desktop only */}
       <aside className="relative hidden overflow-hidden bg-brand-50 px-12 py-14 lg:flex lg:flex-col lg:justify-between">
         {/* Soft brand shapes */}
         <div
           aria-hidden
-          className="pointer-events-none absolute -right-24 -top-24 h-[26rem] w-[26rem] rounded-full bg-brand-100/70"
+          className="pointer-events-none absolute -right-24 -top-24 h-[26rem] w-[26rem] rounded-full bg-brand-200 blur-3xl animate-float"
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute -bottom-28 -left-24 h-[22rem] w-[22rem] rounded-full bg-brand-100/50"
+          className="pointer-events-none absolute -bottom-28 -left-24 h-[22rem] w-[22rem] rounded-full bg-brand-200/80 blur-3xl animate-float-alt"
         />
 
         <div className="relative">
@@ -92,7 +92,7 @@ export default function LoginPage() {
             width={240}
             height={240}
             priority
-            className="h-14 w-auto object-contain"
+            className="h-30 w-auto object-contain"
           />
 
           <h1 className="mt-16 max-w-md text-5xl font-semibold leading-[1.1] tracking-tight text-brand-900">
@@ -122,7 +122,7 @@ export default function LoginPage() {
       </aside>
 
       {/* Sign-in panel */}
-      <main className="flex flex-col justify-center px-6 py-12 sm:px-12 lg:px-16">
+      <main className="flex h-[100dvh] flex-col justify-center px-6 py-4 sm:px-12 lg:px-16">
         <div className="mx-auto w-full max-w-sm">
           {/* Mobile logo — the brand panel is hidden below lg */}
           <Image
@@ -131,7 +131,7 @@ export default function LoginPage() {
             width={240}
             height={240}
             priority
-            className="mb-8 h-12 w-auto object-contain lg:hidden"
+            className="mb-8 h-20 w-auto object-contain lg:hidden"
           />
 
           <h2 className="text-3xl font-semibold tracking-tight text-slate-900">Sign in</h2>
@@ -139,7 +139,7 @@ export default function LoginPage() {
             Enter your credentials to access the staff portal.
           </p>
 
-          <form onSubmit={handleSubmit} noValidate className="mt-8 space-y-5">
+          <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-4">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-slate-700">
                 Email address or staff ID
@@ -231,7 +231,7 @@ export default function LoginPage() {
           </form>
 
           {/* Demo accounts — prototype convenience, delete with the mock auth */}
-          <div className="mt-8 rounded-2xl border border-dashed border-slate-200 p-4">
+          <div className="mt-6 rounded-2xl border border-dashed border-slate-200 p-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
               Demo accounts
             </p>
@@ -271,7 +271,7 @@ export default function LoginPage() {
             </p>
           </div>
 
-          <div className="mt-8 border-t border-slate-100 pt-6 text-center text-xs text-slate-500">
+          <div className="mt-6 border-t border-slate-100 pt-4 text-center text-xs text-slate-500">
             Patients don&apos;t sign in — they open the link sent to their phone.
             <br />
             For support, call{" "}

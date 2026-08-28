@@ -32,7 +32,7 @@ export function TopNav() {
             width={240}
             height={240}
             priority
-            className="h-9 w-9 shrink-0 object-contain"
+            className="h-12 w-auto shrink-0 object-contain"
           />
           {/* Wordmark is in the logo, but it's unreadable at 36px — keep the
               text alongside, and hide it on the narrowest screens. */}
