@@ -16,7 +16,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
+      {/* Browser extensions (ColorZilla, Grammarly, password managers) add
+          attributes to <body> before React hydrates, which reads as a
+          mismatch. Suppress it here — this applies one level deep, to this
+          element's own attributes only, so real mismatches inside the app
+          are still reported. */}
+      <body suppressHydrationWarning>
         <RoleProvider>
           <AppShell>{children}</AppShell>
         </RoleProvider>
