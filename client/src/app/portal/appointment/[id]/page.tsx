@@ -185,7 +185,7 @@ export default function PatientAppointmentPage() {
           width={240}
           height={240}
           priority
-          className="mb-5 h-16 w-auto object-contain"
+          className="mb-5 h-30 w-auto object-contain"
         />
 
         {/* Greeting */}
