@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ExternalLink, LogIn, LogOut } from "lucide-react";
 import { CLINIC } from "@/lib/clinic";
@@ -15,6 +15,14 @@ export function TopNav() {
   const { session, role, signOut } = useAuth();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Escape closes the menu and hands focus back to the trigger, so keyboard
+  // users aren't stranded at the top of the document.
+  function closeMenu() {
+    setOpen(false);
+    buttonRef.current?.focus();
+  }
 
   function handleSignOut() {
     setOpen(false);
@@ -42,8 +50,14 @@ export function TopNav() {
         </Link>
 
         {session ? (
-          <div className="relative">
+          <div
+            className="relative"
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && open) closeMenu();
+            }}
+          >
             <button
+              ref={buttonRef}
               type="button"
               onClick={() => setOpen((v) => !v)}
               onBlur={() => setTimeout(() => setOpen(false), 150)}
@@ -89,6 +103,7 @@ export function TopNav() {
                     never navigates. */}
                 <Link
                   href="/portal/appointment"
+                  role="menuitem"
                   onClick={() => setOpen(false)}
                   className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 transition hover:bg-slate-50"
                 >
@@ -98,6 +113,7 @@ export function TopNav() {
 
                 <button
                   type="button"
+                  role="menuitem"
                   onMouseDown={(e) => {
                     e.preventDefault();
                     handleSignOut();
