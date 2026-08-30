@@ -3,11 +3,24 @@ import type {
   Appointment,
   DoctorAvailability,
   Message,
+  MessageTemplate,
   PatientRequest,
   Doctor,
   StaffUser,
 } from "./types";
 import { dateKey } from "./format";
+
+/**
+ * A date this many days from today, as "YYYY-MM-DD". Seed dates are relative
+ * so the prototype always has a live today, a recent past and a real six-month
+ * tail — a fixed date would put the recall list out of date within a month.
+ */
+function isoOffset(daysFromToday: number): string {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + daysFromToday);
+  return dateKey(d);
+}
 
 // ---------------------------------------------------------------------------
 // Doctors
@@ -37,6 +50,7 @@ export const staffUsers: StaffUser[] = [
     role: "front-desk",
     staffId: "RSC-1042",
     jobTitle: "Front-desk Staff",
+    status: "active",
   },
   {
     id: "u-002",
@@ -47,6 +61,7 @@ export const staffUsers: StaffUser[] = [
     staffId: "RSC-0001",
     jobTitle: "Specialist Physician",
     doctorId: "doc-1",
+    status: "active",
   },
   {
     id: "u-003",
@@ -56,11 +71,27 @@ export const staffUsers: StaffUser[] = [
     role: "front-desk",
     staffId: "RSC-1088",
     jobTitle: "Reception Assistant",
+    status: "active",
+  },
+  // An invitation mid-flight, so the staff screen and the accept page both have
+  // something to show on first load. No password: front desk never sets one.
+  {
+    id: "u-004",
+    fullName: "Gifty Amponsah",
+    email: "gifty.amponsah@rophe.care",
+    role: "front-desk",
+    staffId: "RSC-1104",
+    jobTitle: "Reception Assistant",
+    status: "invited",
+    inviteToken: "demo-invite-token",
+    invitedAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+    invitedBy: "Abena Owusu",
   },
 ];
 
 // ---------------------------------------------------------------------------
-// Patients — 16, varied preferred channels, some missing email.
+// Patients — 22, varied preferred channels, some missing email. The last six
+// are the recall cohort; see the comment above them.
 // ---------------------------------------------------------------------------
 
 export const patients: Patient[] = [
@@ -219,6 +250,76 @@ export const patients: Patient[] = [
     preferredChannel: "email",
     registeredDate: "2024-07-19",
   },
+  // -------------------------------------------------------------------------
+  // The recall cohort (PRD Section 5a). These six exist so the six-month list
+  // is never empty and covers every shape the doctor described: someone who
+  // came once and never came back, and someone who booked and never showed.
+  // p-020 is the odd one out on purpose — a record with no appointment at all,
+  // which the clinic says cannot happen legitimately, so it exercises the
+  // "Needs checking" tab rather than the sweep. Their registration dates are
+  // relative to today, so the tail stays six months long as the prototype ages.
+  // -------------------------------------------------------------------------
+  {
+    id: "p-017",
+    fullName: "Adjoa Frempong",
+    phone: "+233 24 660 4412",
+    whatsappNumber: "+233 24 660 4412",
+    email: "adjoa.frempong@gmail.com",
+    dateOfBirth: "1994-04-11",
+    preferredChannel: "whatsapp",
+    registeredDate: isoOffset(-280),
+    notes: "Came in for a first consultation and did not rebook.",
+  },
+  {
+    id: "p-018",
+    fullName: "Yaw Ansah",
+    phone: "+233 27 214 8890",
+    dateOfBirth: "1968-12-05",
+    preferredChannel: "sms",
+    registeredDate: isoOffset(-620),
+    notes: "Hypertensive. Was attending regularly until last year.",
+  },
+  {
+    id: "p-019",
+    fullName: "Efua Boakye",
+    phone: "+233 20 771 3025",
+    whatsappNumber: "+233 20 771 3025",
+    dateOfBirth: "1999-08-27",
+    preferredChannel: "whatsapp",
+    registeredDate: isoOffset(-300),
+    notes: "Booked twice, did not attend either. No email on file.",
+  },
+  {
+    id: "p-020",
+    fullName: "Kojo Amankwah",
+    phone: "+233 26 448 9071",
+    dateOfBirth: "1981-02-19",
+    preferredChannel: "sms",
+    registeredDate: isoOffset(-310),
+    notes: "Record has no appointment against it — registration looks unfinished.",
+  },
+  {
+    id: "p-021",
+    fullName: "Naa Ayeley Quartey",
+    phone: "+233 24 905 6612",
+    whatsappNumber: "+233 24 905 6612",
+    email: "naa.quartey@outlook.com",
+    dateOfBirth: "1986-10-30",
+    preferredChannel: "email",
+    registeredDate: isoOffset(-400),
+    notes: "Diabetes review patient — due back soon.",
+  },
+  {
+    id: "p-022",
+    fullName: "Kwame Antwi",
+    phone: "+233 20 118 4457",
+    whatsappNumber: "+233 20 118 4457",
+    email: "kwame.antwi@gmail.com",
+    dateOfBirth: "1972-06-14",
+    preferredChannel: "whatsapp",
+    registeredDate: isoOffset(-500),
+    notes: "Lapsed, but a recall message went out this month.",
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -243,23 +344,16 @@ export const doctorAvailability: DoctorAvailability[] = [
 // Dates are relative to "today" so the prototype always has live data.
 // ---------------------------------------------------------------------------
 
-function isoOffset(daysFromToday: number): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + daysFromToday);
-  return dateKey(d);
-}
-
 export const appointments: Appointment[] = [
   // Past — attended history
   {
     id: "a-1001",
     patientId: "p-001",
     doctorId: "doc-1",
-    appointmentType: "Consultation",
+    appointmentType: "Dietician review",
     date: isoOffset(-28),
     time: "09:00",
-    durationMinutes: 30,
+    durationMinutes: 40,
     status: "attended",
     createdAt: new Date(Date.now() - 35 * 86400000).toISOString(),
   },
@@ -267,10 +361,10 @@ export const appointments: Appointment[] = [
     id: "a-1002",
     patientId: "p-004",
     doctorId: "doc-1",
-    appointmentType: "Follow-up",
+    appointmentType: "Other specialist review",
     date: isoOffset(-21),
     time: "10:30",
-    durationMinutes: 30,
+    durationMinutes: 40,
     status: "attended",
     createdAt: new Date(Date.now() - 28 * 86400000).toISOString(),
   },
@@ -278,7 +372,7 @@ export const appointments: Appointment[] = [
     id: "a-1003",
     patientId: "p-006",
     doctorId: "doc-1",
-    appointmentType: "Consultation",
+    appointmentType: "Urologist review",
     date: isoOffset(-14),
     time: "08:30",
     durationMinutes: 45,
@@ -290,10 +384,10 @@ export const appointments: Appointment[] = [
     id: "a-1004",
     patientId: "p-003",
     doctorId: "doc-1",
-    appointmentType: "Follow-up",
+    appointmentType: "Follow up",
     date: isoOffset(-7),
     time: "09:30",
-    durationMinutes: 30,
+    durationMinutes: 15,
     status: "missed",
     createdAt: new Date(Date.now() - 14 * 86400000).toISOString(),
     notes: "No-show, no prior notice.",
@@ -302,10 +396,10 @@ export const appointments: Appointment[] = [
     id: "a-1005",
     patientId: "p-008",
     doctorId: "doc-1",
-    appointmentType: "Consultation",
+    appointmentType: "Other specialist review",
     date: isoOffset(-5),
     time: "14:00",
-    durationMinutes: 30,
+    durationMinutes: 15,
     status: "missed",
     createdAt: new Date(Date.now() - 12 * 86400000).toISOString(),
   },
@@ -313,10 +407,10 @@ export const appointments: Appointment[] = [
     id: "a-1006",
     patientId: "p-011",
     doctorId: "doc-1",
-    appointmentType: "Hypertension Review",
+    appointmentType: "Other specialist review",
     date: isoOffset(-3),
     time: "15:30",
-    durationMinutes: 30,
+    durationMinutes: 15,
     status: "missed",
     createdAt: new Date(Date.now() - 10 * 86400000).toISOString(),
   },
@@ -326,10 +420,10 @@ export const appointments: Appointment[] = [
     id: "a-1010",
     patientId: "p-004",
     doctorId: "doc-1",
-    appointmentType: "Follow-up",
+    appointmentType: "Follow up",
     date: isoOffset(-2),
     time: "09:30",
-    durationMinutes: 30,
+    durationMinutes: 15,
     status: "missed",
     createdAt: new Date(Date.now() - 9 * 86400000).toISOString(),
   },
@@ -337,10 +431,10 @@ export const appointments: Appointment[] = [
     id: "a-1011",
     patientId: "p-013",
     doctorId: "doc-1",
-    appointmentType: "Diabetes Review",
+    appointmentType: "Diabetes review",
     date: isoOffset(-6),
     time: "10:30",
-    durationMinutes: 45,
+    durationMinutes: 15,
     status: "missed",
     createdAt: new Date(Date.now() - 15 * 86400000).toISOString(),
     notes: "Second missed visit — call before rebooking.",
@@ -350,7 +444,7 @@ export const appointments: Appointment[] = [
     id: "a-1007",
     patientId: "p-002",
     doctorId: "doc-1",
-    appointmentType: "Consultation",
+    appointmentType: "General checkup",
     date: isoOffset(-10),
     time: "11:00",
     durationMinutes: 30,
@@ -363,10 +457,10 @@ export const appointments: Appointment[] = [
     id: "a-2001",
     patientId: "p-005",
     doctorId: "doc-1",
-    appointmentType: "Consultation",
+    appointmentType: "Diabetes review",
     date: isoOffset(0),
     time: "09:00",
-    durationMinutes: 30,
+    durationMinutes: 15,
     status: "confirmed",
     createdAt: new Date(Date.now() - 5 * 86400000).toISOString(),
   },
@@ -374,10 +468,10 @@ export const appointments: Appointment[] = [
     id: "a-2002",
     patientId: "p-009",
     doctorId: "doc-1",
-    appointmentType: "Follow-up",
+    appointmentType: "Follow up",
     date: isoOffset(0),
     time: "10:30",
-    durationMinutes: 30,
+    durationMinutes: 15,
     status: "confirmed",
     createdAt: new Date(Date.now() - 6 * 86400000).toISOString(),
   },
@@ -385,10 +479,10 @@ export const appointments: Appointment[] = [
     id: "a-2003",
     patientId: "p-012",
     doctorId: "doc-1",
-    appointmentType: "Consultation",
+    appointmentType: "Dietician review",
     date: isoOffset(0),
     time: "14:00",
-    durationMinutes: 45,
+    durationMinutes: 15,
     status: "booked",
     createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
   },
@@ -397,10 +491,10 @@ export const appointments: Appointment[] = [
     id: "a-2004",
     patientId: "p-007",
     doctorId: "doc-1",
-    appointmentType: "Consultation",
+    appointmentType: "Urologist review",
     date: isoOffset(2),
     time: "08:30",
-    durationMinutes: 30,
+    durationMinutes: 15,
     status: "booked",
     createdAt: new Date(Date.now() - 1 * 86400000).toISOString(),
   },
@@ -408,10 +502,10 @@ export const appointments: Appointment[] = [
     id: "a-2005",
     patientId: "p-010",
     doctorId: "doc-1",
-    appointmentType: "Follow-up",
+    appointmentType: "Follow up",
     date: isoOffset(3),
     time: "11:00",
-    durationMinutes: 30,
+    durationMinutes: 15,
     status: "confirmed",
     createdAt: new Date(Date.now() - 4 * 86400000).toISOString(),
   },
@@ -419,10 +513,10 @@ export const appointments: Appointment[] = [
     id: "a-2006",
     patientId: "p-013",
     doctorId: "doc-1",
-    appointmentType: "Consultation",
+    appointmentType: "Other specialist review",
     date: isoOffset(5),
     time: "09:30",
-    durationMinutes: 30,
+    durationMinutes: 15,
     status: "booked",
     createdAt: new Date(Date.now() - 1 * 86400000).toISOString(),
   },
@@ -430,10 +524,10 @@ export const appointments: Appointment[] = [
     id: "a-2007",
     patientId: "p-015",
     doctorId: "doc-1",
-    appointmentType: "Consultation",
+    appointmentType: "General checkup",
     date: isoOffset(7),
     time: "10:00",
-    durationMinutes: 45,
+    durationMinutes: 30,
     status: "booked",
     createdAt: new Date().toISOString(),
   },
@@ -441,10 +535,10 @@ export const appointments: Appointment[] = [
     id: "a-2008",
     patientId: "p-016",
     doctorId: "doc-1",
-    appointmentType: "Follow-up",
+    appointmentType: "Follow up",
     date: isoOffset(9),
     time: "14:30",
-    durationMinutes: 30,
+    durationMinutes: 15,
     status: "confirmed",
     createdAt: new Date().toISOString(),
   },
@@ -452,20 +546,303 @@ export const appointments: Appointment[] = [
     id: "a-2009",
     patientId: "p-014",
     doctorId: "doc-1",
-    appointmentType: "Consultation",
+    appointmentType: "Diabetes review",
     date: isoOffset(12),
     time: "15:00",
-    durationMinutes: 30,
+    durationMinutes: 15,
     status: "booked",
     createdAt: new Date().toISOString(),
+  },
+
+  // -------------------------------------------------------------------------
+  // Established history. These patients registered in 2024, so their recent
+  // appointments are return visits, not first ones — without an earlier
+  // attended visit on record a "Follow up" would be following up on nothing,
+  // and every booking would price itself at the 40-minute first-visit rate.
+  // -------------------------------------------------------------------------
+  {
+    id: "a-0801",
+    patientId: "p-002",
+    doctorId: "doc-1",
+    appointmentType: "Dietician review",
+    date: isoOffset(-140),
+    time: "09:30",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 147 * 86400000).toISOString(),
+  },
+  {
+    id: "a-0802",
+    patientId: "p-003",
+    doctorId: "doc-1",
+    appointmentType: "Other specialist review",
+    date: isoOffset(-125),
+    time: "10:00",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 132 * 86400000).toISOString(),
+  },
+  {
+    id: "a-0803",
+    patientId: "p-005",
+    doctorId: "doc-1",
+    appointmentType: "Diabetes review",
+    date: isoOffset(-118),
+    time: "10:30",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 125 * 86400000).toISOString(),
+  },
+  {
+    id: "a-0804",
+    patientId: "p-007",
+    doctorId: "doc-1",
+    appointmentType: "General checkup",
+    date: isoOffset(-110),
+    time: "11:00",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 117 * 86400000).toISOString(),
+  },
+  {
+    id: "a-0805",
+    patientId: "p-008",
+    doctorId: "doc-1",
+    appointmentType: "Urologist review",
+    date: isoOffset(-102),
+    time: "14:00",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 109 * 86400000).toISOString(),
+  },
+  {
+    id: "a-0806",
+    patientId: "p-009",
+    doctorId: "doc-1",
+    appointmentType: "Dietician review",
+    date: isoOffset(-96),
+    time: "14:30",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 103 * 86400000).toISOString(),
+  },
+  {
+    id: "a-0807",
+    patientId: "p-010",
+    doctorId: "doc-1",
+    appointmentType: "Diabetes review",
+    date: isoOffset(-88),
+    time: "09:00",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 95 * 86400000).toISOString(),
+  },
+  {
+    id: "a-0808",
+    patientId: "p-011",
+    doctorId: "doc-1",
+    appointmentType: "Other specialist review",
+    date: isoOffset(-80),
+    time: "09:30",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 87 * 86400000).toISOString(),
+  },
+  {
+    id: "a-0809",
+    patientId: "p-012",
+    doctorId: "doc-1",
+    appointmentType: "General checkup",
+    date: isoOffset(-74),
+    time: "10:00",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 81 * 86400000).toISOString(),
+  },
+  {
+    id: "a-0810",
+    patientId: "p-013",
+    doctorId: "doc-1",
+    appointmentType: "Urologist review",
+    date: isoOffset(-68),
+    time: "10:30",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 75 * 86400000).toISOString(),
+  },
+  {
+    id: "a-0811",
+    patientId: "p-014",
+    doctorId: "doc-1",
+    appointmentType: "Dietician review",
+    date: isoOffset(-61),
+    time: "11:00",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 68 * 86400000).toISOString(),
+  },
+  {
+    id: "a-0812",
+    patientId: "p-015",
+    doctorId: "doc-1",
+    appointmentType: "Diabetes review",
+    date: isoOffset(-55),
+    time: "14:00",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 62 * 86400000).toISOString(),
+  },
+  {
+    id: "a-0813",
+    patientId: "p-016",
+    doctorId: "doc-1",
+    appointmentType: "Other specialist review",
+    date: isoOffset(-48),
+    time: "14:30",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 55 * 86400000).toISOString(),
+  },
+
+  // -------------------------------------------------------------------------
+  // The six-month tail. These sit far enough back that the recall list has
+  // something in it on day one, and they carry the clinic's own durations —
+  // 40 minutes for a first visit, 15 for a return — so the seed agrees with
+  // the rule in lib/appointment-types.ts.
+  // -------------------------------------------------------------------------
+
+  // p-017 — came once, never came back (8 months).
+  {
+    id: "a-0901",
+    patientId: "p-017",
+    doctorId: "doc-1",
+    appointmentType: "Dietician review",
+    date: isoOffset(-245),
+    time: "09:00",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 252 * 86400000).toISOString(),
+    notes: "First consultation. Advised to return in 6 weeks.",
+  },
+
+  // p-018 — attended regularly, then stopped (14 months).
+  {
+    id: "a-0902",
+    patientId: "p-018",
+    doctorId: "doc-1",
+    appointmentType: "Urologist review",
+    date: isoOffset(-600),
+    time: "08:30",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 607 * 86400000).toISOString(),
+  },
+  {
+    id: "a-0903",
+    patientId: "p-018",
+    doctorId: "doc-1",
+    appointmentType: "Other specialist review",
+    date: isoOffset(-520),
+    time: "10:00",
+    durationMinutes: 15,
+    status: "attended",
+    createdAt: new Date(Date.now() - 527 * 86400000).toISOString(),
+  },
+  {
+    id: "a-0904",
+    patientId: "p-018",
+    doctorId: "doc-1",
+    appointmentType: "Other specialist review",
+    date: isoOffset(-425),
+    time: "10:15",
+    durationMinutes: 15,
+    status: "attended",
+    createdAt: new Date(Date.now() - 432 * 86400000).toISOString(),
+    notes: "BP stable on current dose. Review in 3 months.",
+  },
+
+  // p-019 — booked twice, never attended either.
+  {
+    id: "a-0905",
+    patientId: "p-019",
+    doctorId: "doc-1",
+    appointmentType: "Other specialist review",
+    date: isoOffset(-285),
+    time: "11:00",
+    durationMinutes: 40,
+    status: "missed",
+    createdAt: new Date(Date.now() - 292 * 86400000).toISOString(),
+    notes: "No-show. Rebooked over the phone.",
+  },
+  {
+    id: "a-0906",
+    patientId: "p-019",
+    doctorId: "doc-1",
+    appointmentType: "General checkup",
+    date: isoOffset(-215),
+    time: "09:30",
+    durationMinutes: 40,
+    status: "missed",
+    createdAt: new Date(Date.now() - 222 * 86400000).toISOString(),
+    notes: "No-show again. Phone rang out.",
+  },
+
+  // p-021 — inside the warning band, not yet lapsed (5 months).
+  {
+    id: "a-0907",
+    patientId: "p-021",
+    doctorId: "doc-1",
+    appointmentType: "Diabetes review",
+    date: isoOffset(-160),
+    time: "14:00",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 167 * 86400000).toISOString(),
+  },
+
+  // p-022 — lapsed, but already contacted this month (see m-101).
+  {
+    id: "a-0908",
+    patientId: "p-022",
+    doctorId: "doc-1",
+    appointmentType: "General checkup",
+    date: isoOffset(-215),
+    time: "08:00",
+    durationMinutes: 40,
+    status: "attended",
+    createdAt: new Date(Date.now() - 222 * 86400000).toISOString(),
   },
 ];
 
 // ---------------------------------------------------------------------------
-// Messages — 17 entries, all types/channels, at least one failed.
+// Messages — 20 entries, all types/channels, at least one failed, including
+// the recall sweep that keeps p-022 off this month's list.
 // ---------------------------------------------------------------------------
 
 export const messages: Message[] = [
+  // Recall outreach. m-101 is inside the 30-day cooldown, which is why Kwame
+  // Antwi shows as "contacted" rather than pending on the recall screen; m-102
+  // is old enough that Yaw Darko is due another attempt.
+  {
+    id: "m-101",
+    patientId: "p-022",
+    channel: "whatsapp",
+    type: "recall",
+    sentAt: new Date(Date.now() - 12 * 86400000).toISOString(),
+    deliveryStatus: "delivered",
+    contentPreview:
+      "Hello Kwame, we have not seen you at Rophe Specialist Care since January. Call 020 152 9933 to book a visit.",
+  },
+  {
+    id: "m-102",
+    patientId: "p-018",
+    channel: "sms",
+    type: "recall",
+    sentAt: new Date(Date.now() - 95 * 86400000).toISOString(),
+    deliveryStatus: "failed",
+    contentPreview:
+      "Hello Yaw, it has been a while since your last review. Call 020 152 9933 to book a visit.",
+  },
   {
     id: "m-001",
     patientId: "p-001",
@@ -669,5 +1046,87 @@ export const patientRequests: PatientRequest[] = [
     requestType: "cancellation",
     reason: "Feeling better, no longer needed.",
     status: "pending",
+  },
+];
+
+
+// ---------------------------------------------------------------------------
+// Message templates
+//
+// The wording the clinic owns. These are starting drafts, not final copy —
+// the point of the Templates tab is that Rophe replaces them with their own
+// words without anyone touching the code. Each one is kept inside a single
+// 160-character SMS segment once rendered, so the default wording costs one
+// message per patient rather than two.
+// ---------------------------------------------------------------------------
+
+const TEMPLATES_SEEDED_AT = new Date(Date.now() - 21 * 86400000).toISOString();
+
+export const messageTemplates: MessageTemplate[] = [
+  {
+    id: "tpl-confirmation",
+    type: "confirmation",
+    description: "Sent as soon as an appointment is booked.",
+    body:
+      "Hello {{first_name}}, your appointment with {{doctor}} is confirmed for " +
+      "{{date}} at {{time}}. Call {{clinic_phone}} if you need to change it.",
+    emailSubject: "Your appointment is confirmed — {{clinic_name}}",
+    version: 1,
+    updatedAt: TEMPLATES_SEEDED_AT,
+    updatedBy: "Abena Owusu",
+    history: [],
+  },
+  {
+    id: "tpl-reminder",
+    type: "reminder",
+    description: "Sent the day before an appointment.",
+    body:
+      "Hello {{first_name}}, a reminder of your appointment tomorrow, {{date}} " +
+      "at {{time}}, with {{doctor}}. Please arrive 10 minutes early.",
+    emailSubject: "Reminder: your appointment on {{date}}",
+    version: 1,
+    updatedAt: TEMPLATES_SEEDED_AT,
+    updatedBy: "Abena Owusu",
+    history: [],
+  },
+  {
+    id: "tpl-follow-up",
+    type: "follow-up",
+    description: "Sent after a missed appointment.",
+    body:
+      "Hello {{first_name}}, we missed you at {{clinic_name}} on {{date}}. " +
+      "Call {{clinic_phone}} to book another time — we would love to see you.",
+    emailSubject: "We missed you at {{clinic_name}}",
+    version: 1,
+    updatedAt: TEMPLATES_SEEDED_AT,
+    updatedBy: "Abena Owusu",
+    history: [],
+  },
+  {
+    id: "tpl-recall",
+    type: "recall",
+    description: "Sent to a patient who has not been seen for six months.",
+    body:
+      "Hello {{first_name}}, we have not seen you at {{clinic_name}} since " +
+      "{{last_visit}}. If you are due a check-up, call {{clinic_phone}} and we " +
+      "will find you a time.",
+    emailSubject: "It has been a while — {{clinic_name}}",
+    version: 1,
+    updatedAt: TEMPLATES_SEEDED_AT,
+    updatedBy: "Abena Owusu",
+    history: [],
+  },
+  {
+    id: "tpl-birthday",
+    type: "birthday",
+    description: "Sent on the patient's birthday.",
+    body:
+      "Happy birthday, {{first_name}}! Everyone at {{clinic_name}} wishes you " +
+      "a wonderful year ahead and good health always.",
+    emailSubject: "Happy birthday from {{clinic_name}}!",
+    version: 1,
+    updatedAt: TEMPLATES_SEEDED_AT,
+    updatedBy: "Abena Owusu",
+    history: [],
   },
 ];

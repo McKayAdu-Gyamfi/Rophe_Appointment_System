@@ -49,7 +49,7 @@ export function NewPatientDialog({ open, onOpenChange, onCreated }: NewPatientDi
     >
       <div className="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl sm:max-w-lg sm:rounded-2xl sm:p-6">
         <div className="mb-5 flex items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-teal-100 text-teal-600">
             <UserPlus className="h-5 w-5" />
           </span>
           <div>

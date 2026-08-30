@@ -2,12 +2,22 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Plus, Search, UserRound, Users } from "lucide-react";
-import { getAppointments, getPatients } from "@/lib/api";
-import type { Appointment, Channel, Patient } from "@/lib/types";
-import { CHANNEL_STYLES } from "@/lib/status-styles";
-import { age, fmtDate, initials, startOfDay } from "@/lib/format";
+import {
+  CalendarCheck,
+  ChevronRight,
+  Plus,
+  Search,
+  UserRound,
+  UserRoundSearch,
+  Users,
+} from "lucide-react";
+import { getAppointments, getMessages, getPatients } from "@/lib/api";
+import type { Appointment, Channel, Message, Patient } from "@/lib/types";
+import { CHANNEL_STYLES, RECALL_STATE_STYLES } from "@/lib/status-styles";
+import { RECALL_MONTHS, buildVisitSummaries, elapsedLabel, needsRecall } from "@/lib/visits";
+import { age, fmtDate, initials } from "@/lib/format";
 import { useRole } from "@/lib/role-context";
+import { StatCard } from "@/components/dashboard/stat-card";
 import { cn } from "@/lib/utils";
 
 type ChannelFilter = "all" | Channel;
@@ -30,17 +40,25 @@ export default function PatientsPage() {
 
   const [patients, setPatients] = useState<Patient[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [channel, setChannel] = useState<ChannelFilter>("all");
+  /** Narrows the list to the six-month recall cohort (lib/visits.ts). */
+  const [lapsedOnly, setLapsedOnly] = useState(false);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const [pts, appts] = await Promise.all([getPatients(), getAppointments()]);
+      const [pts, appts, msgs] = await Promise.all([
+        getPatients(),
+        getAppointments(),
+        getMessages(),
+      ]);
       if (!active) return;
       setPatients(pts);
       setAppointments(appts);
+      setMessages(msgs);
       setLoading(false);
     })();
     return () => {
@@ -48,26 +66,26 @@ export default function PatientsPage() {
     };
   }, []);
 
-  // Per-patient visit summary, derived once rather than per row.
-  const summaries = useMemo(() => {
-    const today = startOfDay(new Date()).getTime();
-    const map = new Map<string, { lastVisit?: Appointment; nextAppt?: Appointment; visits: number }>();
+  // Per-patient visit summary, derived once rather than per row. Shared with
+  // the recall screen and the dashboard so "last seen" means one thing.
+  const summaries = useMemo(
+    () => buildVisitSummaries(patients, appointments, messages),
+    [patients, appointments, messages],
+  );
 
-    for (const appt of appointments) {
-      const entry = map.get(appt.patientId) ?? { visits: 0 };
-      const when = startOfDay(new Date(appt.date)).getTime();
-
-      if (appt.status === "attended") {
-        entry.visits += 1;
-        if (!entry.lastVisit || appt.date > entry.lastVisit.date) entry.lastVisit = appt;
-      }
-      if (when >= today && (appt.status === "booked" || appt.status === "confirmed")) {
-        if (!entry.nextAppt || appt.date < entry.nextAppt.date) entry.nextAppt = appt;
-      }
-      map.set(appt.patientId, entry);
+  // Roll-up for the header tiles. "Due for recall" is the one front desk acts
+  // on: six months without a visit and nothing on the calendar.
+  const stats = useMemo(() => {
+    let withUpcoming = 0;
+    let lapsed = 0;
+    for (const patient of patients) {
+      const summary = summaries.get(patient.id);
+      if (!summary) continue;
+      if (summary.nextAppointment) withUpcoming += 1;
+      if (needsRecall(summary)) lapsed += 1;
     }
-    return map;
-  }, [appointments]);
+    return { withUpcoming, lapsed };
+  }, [patients, summaries]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -75,6 +93,11 @@ export default function PatientsPage() {
 
     return patients
       .filter((p) => (channel === "all" ? true : p.preferredChannel === channel))
+      .filter((p) => {
+        if (!lapsedOnly) return true;
+        const summary = summaries.get(p.id);
+        return summary ? needsRecall(summary) : false;
+      })
       .filter((p) => {
         if (!q) return true;
         if (p.fullName.toLowerCase().includes(q)) return true;
@@ -85,12 +108,12 @@ export default function PatientsPage() {
         return p.email?.toLowerCase().includes(q) ?? false;
       })
       .sort((a, b) => a.fullName.localeCompare(b.fullName));
-  }, [patients, query, channel]);
+  }, [patients, query, channel, lapsedOnly, summaries]);
 
   if (loading) {
     return (
       <div className="px-4 py-10 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl animate-pulse space-y-4">
+        <div className="mx-auto max-w-7xl animate-pulse space-y-4 rounded-surface bg-slate-100 p-4 sm:p-5">
           <div className="h-8 w-48 rounded-lg bg-slate-200" />
           <div className="h-11 rounded-xl bg-slate-200" />
           <div className="h-96 rounded-xl bg-slate-200" />
@@ -100,25 +123,46 @@ export default function PatientsPage() {
   }
 
   return (
-    <div className="px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
+    <div className="px-4 pb-8 pt-1 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl rounded-surface bg-slate-100 p-4 sm:p-5">
         {/* Header */}
         <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Patients</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              {patients.length} registered {patients.length === 1 ? "patient" : "patients"}
-            </p>
-          </div>
+          <div />
           {canEdit && (
             <Link
               href="/patients/new"
-              className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
+              className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800"
             >
               <Plus className="h-4 w-4" />
               Add patient
             </Link>
           )}
+        </div>
+
+        <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatCard
+            label="Registered patients"
+            value={String(patients.length)}
+            icon={Users}
+            note={`${stats.withUpcoming} with a visit booked`}
+          />
+          <StatCard
+            label="Booked in"
+            value={String(stats.withUpcoming)}
+            icon={CalendarCheck}
+            note={`${patients.length - stats.withUpcoming} with nothing scheduled`}
+          />
+          <StatCard
+            label="Due for recall"
+            value={String(stats.lapsed)}
+            icon={UserRoundSearch}
+            tone={stats.lapsed > 0 ? "alert" : "accent"}
+            note={
+              stats.lapsed === 0
+                ? "Everyone seen recently"
+                : `Not seen in ${RECALL_MONTHS}+ months`
+            }
+          />
         </div>
 
         {/* Search + channel filter */}
@@ -131,10 +175,10 @@ export default function PatientsPage() {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search by name, phone, or email"
               aria-label="Search patients"
-              className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-teal-400 focus:ring-2 focus:ring-teal-100"
+              className="w-full rounded-xl bg-white py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-500 focus:ring-2 focus:ring-teal-600"
             />
           </div>
-          <div className="flex shrink-0 gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+          <div className="flex shrink-0 gap-1 rounded-panel bg-white p-1">
             {CHANNEL_FILTERS.map((f) => (
               <button
                 key={f.value}
@@ -144,7 +188,7 @@ export default function PatientsPage() {
                 className={cn(
                   "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
                   channel === f.value
-                    ? "bg-teal-50 text-teal-700"
+                    ? "bg-teal-100 text-teal-700"
                     : "text-slate-500 hover:bg-slate-50 hover:text-slate-700",
                 )}
               >
@@ -152,11 +196,26 @@ export default function PatientsPage() {
               </button>
             ))}
           </div>
+
+          <button
+            type="button"
+            onClick={() => setLapsedOnly((prev) => !prev)}
+            aria-pressed={lapsedOnly}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition",
+              lapsedOnly
+                ? "bg-rose-100 text-rose-700"
+                : "bg-white text-slate-500 hover:text-slate-700",
+            )}
+          >
+            <UserRoundSearch className="h-3.5 w-3.5" />
+            Due for recall
+          </button>
         </div>
 
         {/* Results */}
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+        <div className="overflow-hidden rounded-panel bg-white">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-slate-400" />
               <h2 className="text-sm font-semibold text-slate-900">
@@ -169,7 +228,7 @@ export default function PatientsPage() {
           </div>
 
           {/* Column headers (desktop only) */}
-          <div className="hidden border-b border-slate-100 bg-slate-50/60 px-4 py-2 text-xs font-medium uppercase tracking-wide text-slate-400 lg:grid lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_1.5rem] lg:gap-4">
+          <div className="hidden border-b border-slate-200 bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-500 lg:grid lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_1.5rem] lg:gap-4">
             <span>Patient</span>
             <span>Phone</span>
             <span>Channel</span>
@@ -187,7 +246,7 @@ export default function PatientsPage() {
               </p>
             </div>
           ) : (
-            <ul className="divide-y divide-slate-100">
+            <ul className="divide-y divide-slate-200">
               {filtered.map((p) => {
                 const summary = summaries.get(p.id);
                 const channelStyle = CHANNEL_STYLES[p.preferredChannel];
@@ -199,13 +258,25 @@ export default function PatientsPage() {
                     >
                       {/* Name + avatar */}
                       <div className="flex min-w-0 items-center gap-3 lg:col-span-1">
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-50 text-xs font-semibold text-teal-700">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-100 text-xs font-semibold text-teal-700">
                           {initials(p.fullName)}
                         </span>
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-slate-900">
-                            {p.fullName}
-                          </p>
+                          <div className="flex min-w-0 items-center gap-2">
+                            <p className="truncate text-sm font-medium text-slate-900">
+                              {p.fullName}
+                            </p>
+                            {summary && needsRecall(summary) && (
+                              <span
+                                className={cn(
+                                  "hidden shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold lg:inline",
+                                  RECALL_STATE_STYLES.lapsed.badge,
+                                )}
+                              >
+                                Recall
+                              </span>
+                            )}
+                          </div>
                           <p className="truncate text-xs text-slate-500">
                             {age(p.dateOfBirth)} yrs
                             <span className="lg:hidden"> · {p.phone}</span>
@@ -231,19 +302,35 @@ export default function PatientsPage() {
                         </span>
                       </span>
 
-                      {/* Last visit */}
-                      <span className="hidden text-sm text-slate-600 lg:block">
+                      {/* Last visit — the date, plus how long ago in the
+                          clinic's own terms, so a lapsed patient is visible
+                          without doing the arithmetic. */}
+                      <span className="hidden text-sm lg:block">
                         {summary?.lastVisit ? (
-                          fmtDate(summary.lastVisit.date)
+                          <>
+                            <span className="block text-slate-600">
+                              {fmtDate(summary.lastVisit.date)}
+                            </span>
+                            <span
+                              className={cn(
+                                "block text-[11px]",
+                                summary.state === "lapsed" ? "text-rose-600" : "text-slate-400",
+                              )}
+                            >
+                              {elapsedLabel(summary.monthsSinceAnchor)}
+                            </span>
+                          </>
                         ) : (
-                          <span className="text-slate-300">—</span>
+                          <span className="text-slate-300">Never seen</span>
                         )}
                       </span>
 
                       {/* Next appointment */}
                       <span className="hidden text-sm lg:block">
-                        {summary?.nextAppt ? (
-                          <span className="text-slate-600">{fmtDate(summary.nextAppt.date)}</span>
+                        {summary?.nextAppointment ? (
+                          <span className="text-slate-600">
+                            {fmtDate(summary.nextAppointment.date)}
+                          </span>
                         ) : (
                           <span className="text-slate-300">None scheduled</span>
                         )}

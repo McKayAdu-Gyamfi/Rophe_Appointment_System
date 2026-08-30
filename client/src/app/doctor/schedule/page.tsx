@@ -72,7 +72,7 @@ export default function DoctorSchedulePage() {
   if (loading) {
     return (
       <div className="px-4 py-10 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl animate-pulse space-y-4">
+        <div className="mx-auto max-w-7xl animate-pulse space-y-4 rounded-surface bg-slate-100 p-4 sm:p-5">
           <div className="h-8 w-56 rounded-lg bg-slate-200" />
           <div className="h-11 rounded-xl bg-slate-200" />
           <div className="h-[32rem] rounded-xl bg-slate-200" />
@@ -82,11 +82,10 @@ export default function DoctorSchedulePage() {
   }
 
   return (
-    <div className="px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
+    <div className="px-4 pb-8 pt-1 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl rounded-surface bg-slate-100 p-4 sm:p-5">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">My schedule</h1>
             <p className="mt-1 text-sm text-slate-500">
               {view === "week"
                 ? `Week of ${fmtLongDate(dateKey(days[0]))}`
@@ -97,7 +96,7 @@ export default function DoctorSchedulePage() {
           </div>
           <Link
             href="/doctor/availability"
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
           >
             <CalendarCheck className="h-4 w-4" />
             My availability
@@ -106,7 +105,7 @@ export default function DoctorSchedulePage() {
 
         {/* Toolbar */}
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+          <div className="flex gap-1 rounded-panel bg-white p-1">
             {SCHEDULE_VIEWS.map((v) => (
               <button
                 key={v.value}
@@ -116,7 +115,7 @@ export default function DoctorSchedulePage() {
                 className={cn(
                   "rounded-lg px-4 py-1.5 text-sm font-semibold transition",
                   view === v.value
-                    ? "bg-teal-50 text-teal-700"
+                    ? "bg-teal-100 text-teal-700"
                     : "text-slate-500 hover:bg-slate-50 hover:text-slate-700",
                 )}
               >
@@ -131,14 +130,14 @@ export default function DoctorSchedulePage() {
                 type="button"
                 onClick={() => step(-1)}
                 aria-label={view === "week" ? "Previous week" : "Previous day"}
-                className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-700"
+                className="rounded-lg bg-white p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <button
                 type="button"
                 onClick={() => setCursor(startOfDay(new Date()))}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
+                className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
               >
                 Today
               </button>
@@ -146,7 +145,7 @@ export default function DoctorSchedulePage() {
                 type="button"
                 onClick={() => step(1)}
                 aria-label={view === "week" ? "Next week" : "Next day"}
-                className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-700"
+                className="rounded-lg bg-white p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>

@@ -38,6 +38,9 @@ Routes as actually built (these are canonical — the screen list in Section 3 m
 | Appointments calendar / book / reschedule | `/appointments`, `/appointments/book`, `/appointments/[id]/reschedule` |
 | Message log | `/messages` |
 | Pending requests | `/requests` |
+| Patient recalls | `/recalls` |
+| Staff accounts | `/staff` |
+| Accept a staff invitation | `/invite/[token]` (public; renders without app chrome) |
 | Doctor dashboard / availability / schedule | `/doctor`, `/doctor/availability`, `/doctor/schedule` |
 | Patient-facing page | `/portal/appointment/[id]` |
 
@@ -73,11 +76,18 @@ The mock client as built (functions beyond the starter table need adding to the 
 | `getPendingRequests()` | GET `/api/requests` — returns the whole queue, resolved rows included |
 | `createPatientRequest(input)` | POST `/api/requests` — submitted from the patient-facing page; never touches the appointment |
 | `respondToRequest(id, decision)` | PATCH `/api/requests/:id` — confirming cascades to the linked appointment |
+| `getPatientRecalls()` | GET `/api/recalls` — every patient with a visit summary attached; the screen filters |
+| `getPatientVisitSummary(id)` | GET `/api/patients/:id/visits` — one patient's last-visit/recall standing |
 | `getDoctorAvailability(doctorId)` | GET `/api/doctors/:id/availability` |
 | `setDoctorDayAvailability(doctorId, dayOfWeek, windows)` | PUT `/api/doctors/:id/availability/:day` — replaces that day's windows wholesale |
 | `getDoctors()` | GET `/api/doctors` |
 | `signIn({ email, password })` | POST `/api/auth/login` — browser-side credential check in the prototype; the real one issues a session cookie |
-| `getStaffUsers()` | GET `/api/staff` — used only to list demo accounts on the login screen |
+| `getStaffUsers()` | GET `/api/staff` — the staff list, and the demo accounts on the login screen |
+| `inviteStaffUser(input)` | POST `/api/staff/invitations` — creates an account with no password and returns a one-time token |
+| `getStaffInvitation(token)` | GET `/api/staff/invitations/:token` — what the joiner is accepting |
+| `acceptStaffInvitation(token, password)` | POST `/api/staff/invitations/:token/accept` — the only call that can set a password |
+| `resendStaffInvitation(id)` | POST `/api/staff/invitations/:id/resend` — issues a new token, invalidating the old |
+| `revokeStaffInvitation(id)` | DELETE `/api/staff/invitations/:id` — only ever removes an unaccepted invitation |
 
 Conventions every function follows, so the swap stays mechanical: `async`, returns a Promise resolved after a short simulated latency, reads return copies of the mock arrays, writes mutate the arrays in `lib/mockData.ts` and return the new/updated record. Inputs are typed (`CreatePatientInput`, `BookAppointmentInput`, `RequestDecision`) and all entity shapes live in `lib/types.ts`.
 
@@ -95,7 +105,7 @@ Build **one application**. Staff sign in at `/login`; the signed-in account's ro
 
 | Role | Who | How they get in | Prototype access |
 |---|---|---|---|
-| Front-desk Staff | Primary/admin user | Sign-in | Full access to all modules below |
+| Front-desk Staff | Primary/admin user | Sign-in | Full access to all modules below, including inviting new staff |
 | Doctor | Host doctor | Sign-in | Read-focused: schedule, availability settings, patient history, dashboard |
 | Patient | No account | Link to `/portal/appointment/:id` | Single lightweight page only — no dashboard access |
 
@@ -119,12 +129,18 @@ The login screen lists these and fills the form on tap, so a reviewer never has 
 5. **Book/Reschedule Appointment** — form: select patient (search or "new patient"), appointment type, date/time (constrained to doctor's declared available slots — show unavailable slots as disabled/greyed), duration, notes.
 6. **Message Log** — table: patient, channel, message type (confirmation/reminder/follow-up/birthday), timestamp, delivery status (sent/delivered/failed — mocked).
 7. **Pending Requests** — list of patient-submitted reschedule/cancellation requests awaiting staff confirm/decline.
+8. **Staff Accounts** — list of staff and pending invitations; invite a new doctor or front-desk colleague. Added after clinic feedback — see Section 4b.
+9. **Patient Recalls** — the six-month sweep. Patients the clinic has not seen for `RECALL_MONTHS`, with how long they have been quiet, why, and their preferred channel; select a batch and send. Added after clinic feedback — see Section 4a.
 
 ### 3.2 Doctor View
 1. **Dashboard** — same shape as staff dashboard but read-focused, lighter, less clutter.
 2. **My Availability** — set/edit available days and time slots (simple weekly grid, click to toggle slots open/closed).
 3. **My Schedule** — day/week/list views of their own appointments.
 4. **Patient History (read-only)** — view a patient's visit history from the schedule.
+
+### 3.2b Staff Invitation Page (no login)
+1. **Accept invitation** — reached from a one-time link at `/invite/:token`. Shows who invited them, the email they will sign in with, their role and staff ID, all read-only, and the one thing they supply: a password of their own choosing. Renders without app chrome, like `/login`.
+2. An expired, withdrawn or already-used link says so plainly and points at the front desk, rather than failing as a blank page.
 
 ### 3.3 Patient-Facing Page (no login)
 1. **Appointment View** — single page reached via a "secure link" (a mock URL param, `/portal/appointment/:appointmentId`, in the prototype). Shows: date, time, doctor name, clinic location/address, appointment type.
@@ -168,10 +184,15 @@ Seed data should follow these shapes. Use realistic Ghanaian names/phone formats
 ```
 {
   id, patientId, appointmentId, channel: "whatsapp" | "sms" | "email",
-  type: "confirmation" | "reminder" | "follow-up" | "birthday",
+  type: "confirmation" | "reminder" | "follow-up" | "recall" | "birthday",
   sentAt, deliveryStatus: "sent" | "delivered" | "failed", contentPreview
 }
 ```
+
+> **Added during build:** `"recall"`. Six-month outreach is not tied to any one
+> appointment, so it cannot be a `follow-up` (which chases a specific missed
+> visit) without making both untrackable in the log. It has its own template,
+> and its own merge field `{{last_visit}}`.
 
 > **`deliveryStatus` means three different levels of confidence, and the distinction is the point of the audit log:**
 > - **sent** — handed to the provider and accepted. *Nobody has confirmed the patient received it.*
@@ -179,6 +200,22 @@ Seed data should follow these shapes. Use realistic Ghanaian names/phone formats
 > - **failed** — rejected or undeliverable: wrong number, handset off past the expiry window, blocked sender, bounced email.
 >
 > This matters when someone no-shows: a reminder stuck on "sent" is possibly the clinic's problem, one marked "delivered" is not. Every message starts at `sent` and resolves ~1.5–3s later, simulating the provider callback (`SIMULATED_FAILURE_RATE` in `lib/api.ts` controls how often one fails — set it to 0 for a clean demo).
+
+**StaffUser** *(added Section 4b — the account, not the person's clinical record)*
+```
+{
+  id, fullName, email, password?, role: "front-desk" | "doctor",
+  staffId, jobTitle, doctorId?,
+  status: "invited" | "active",
+  inviteToken?, invitedAt, invitedBy, activatedAt?
+}
+```
+
+> `password` is **optional on purpose**: it does not exist between the moment
+> front desk creates the account and the moment the joiner sets one. The type
+> carries that fact so nothing downstream can assume a password is present.
+> `inviteToken` is single-use and deleted on activation; neither it nor the
+> password appears in `StaffSession`, which is what the app holds in memory.
 
 **PatientRequest**
 ```
@@ -188,6 +225,168 @@ Seed data should follow these shapes. Use realistic Ghanaian names/phone formats
 }
 ```
 
+## 4a. Clinic Feedback — Visit Length & the Six-Month Recall
+
+Two pieces of feedback from the clinic (WhatsApp, August 2026) that changed the
+model rather than just the wording. Both are recorded here because both rest on
+a definition the software had to be given.
+
+### Appointment length follows the patient, not the booker
+
+> *"First time patients is 40mins · Follow-up is 15mins"*
+
+Duration was previously a free dropdown defaulting to 30 minutes, and **40 was
+not even an option** — the clinic's own first-visit length could not be
+expressed. It is now derived from two facts the system already holds, in
+`lib/appointment-types.ts`:
+
+| Situation | Minutes |
+|---|---|
+| Patient has no completed visit on record | **40** |
+| Returning · Follow up, and every "… review" | **15** |
+| Returning · General checkup | 30 (unchanged) |
+
+The booking form pre-fills this and **states why** ("First visit — the clinic
+allows 40 minutes for a new patient"). Front desk can still override for a
+complicated case; the override sticks, is marked as hand-set, and offers one
+click back to the rule.
+
+A first visit wins over the appointment type. This matters more under the
+clinic's own type list (Section 4c) than it did under the guessed one: the type
+now names the *service*, not the stage, so a brand-new patient books "Dietician
+review" like everyone else — and still needs the full 40 minutes.
+
+Note that "first visit" means **no *attended* visit**. A patient who booked last
+month and no-showed is still someone the doctor has never met.
+
+### "Not showing up for the past 6 months"
+
+The original request was ambiguous, and the thread settled it:
+
+> **Question:** *is it they booked an appointment and never came … or after their
+> first consultation they never came back?*
+>
+> **Answer:** *"It covers all you have mentioned — whether they booked and never
+> showed up, whether they just never came again after they came once … the 6
+> months is basically covering when last they visited the clinic."*
+
+So there is **one clock — time since they were last actually seen** — and the
+route they took into silence changes only what staff say on the call, not
+whether the patient is on the list. The recall screen therefore shows a
+*reason* on every row rather than splitting the list into separate reports:
+
+| Reason | Meaning |
+|---|---|
+| Stopped returning | Attended at least once, then stopped |
+| Never attended | Booked at least once, never actually came |
+
+These are exactly the two cases the doctor described, and there is no third.
+
+**Three exclusions, all deliberate:**
+
+1. **A patient with a visit already booked is never on the list.** They are
+   coming back; calling to ask why they never return reads as a clinic that
+   does not check its own diary.
+2. **A patient who no-showed last week is not on it either.** They belong to the
+   dashboard's *missed-visit follow-up* list, which chases within days. The
+   recall sweep is the long tail behind it. So eligibility is measured from the
+   last contact of *any* kind, while the date on screen stays what the doctor
+   asked for — when they were last actually seen.
+3. **A record with no appointment at all is not a recall.** *Confirmed with the
+   clinic:* registration and booking always happen together — nobody goes on the
+   register without a visit and a booking in the same breath. So a patient row
+   with zero appointments is not someone who went quiet, it is an unfinished
+   registration or a duplicate. Its only date is the day someone typed it in,
+   which says nothing about whether the clinic ever had a relationship with that
+   person. These sit in a **Needs checking** tab to be corrected or removed, and
+   never receive a message — a recall system that texts people six months after
+   a half-finished form is chasing its own bad data.
+
+**A recall is a batch job, not a row action.** Front desk selects everyone due
+and sends in one sweep, each on the patient's preferred channel, using the
+clinic-owned `recall` template. Anyone contacted within `RECALL_COOLDOWN_DAYS`
+moves to a *Contacted* tab so the next sweep skips them — a recall system that
+texts the same person weekly stops being read.
+
+**Thresholds** (`lib/visits.ts`, one line each to change): `RECALL_MONTHS = 6`,
+`LAPSING_MONTHS = 5` (a warning band, so the list never arrives cold),
+`RECALL_COOLDOWN_DAYS = 30`.
+
+Nothing is stored: "lapsed" is not a state a patient is put into, it is what
+falls out of the diary the moment nobody books them. A stored flag would need
+something to remember to clear it when they finally come back.
+
+## 4b. Clinic Feedback — Staff Accounts
+
+> *"The front-desk staff should be able to add a new user (that is a doctor), or
+> another front desk staff … where they set up like their email and then the new
+> person creates their own password."*
+
+Front desk creates the account; the joiner creates the credentials. The split is
+the requirement, and it is also the only version worth building — any flow where
+a colleague picks your password ends with that password being read out across a
+desk, and with no way to tell afterwards who actually signed in.
+
+**The flow, in two halves:**
+
+1. **`/staff` (front desk).** Full name, work email, role (Front desk or Doctor),
+   job title, and a specialty for doctors. **There is no password field, and its
+   absence is the feature.** Submitting creates an account with `status:
+   "invited"`, no password at all, and a single-use token. The prototype shows
+   the resulting link on screen to copy, because nothing here can send email; in
+   Phase 3 the same call sends it and the link is never displayed.
+2. **`/invite/:token` (the joiner, no sign-in).** Shows who invited them and what
+   they are accepting — email, role, staff ID, all read-only — and takes a
+   password of their own. Accepting consumes the token, sets `status: "active"`,
+   and sends them to sign in. Deliberately *not* auto-signed-in: their first act
+   should prove the credentials work while they are still at the desk.
+
+**Consequences that fall out of `password` being optional:**
+
+- An `invited` account **cannot sign in**. It says so in plain words rather than
+  "wrong credentials", which would send a new joiner hunting for a password
+  nobody ever gave them. This is the one place the login screen names a real
+  cause — justified because the person was sent the invitation.
+- Invitations can be **withdrawn** (a typo in the address, someone who did not
+  join) or **re-issued** (a link that went astray, which invalidates the old
+  one). Neither action can ever touch an active colleague's account.
+- Inviting a **doctor** also creates the `Doctor` record their schedule joins
+  against — a doctor account with no Doctor row would sign in to a schedule that
+  cannot exist. Withdrawing that invitation removes the placeholder again.
+
+## 4c. Clinic Feedback — Appointment Types
+
+The clinic supplied its real list, replacing the five guessed types:
+
+| # | Type | Returning-patient length |
+|---|---|---|
+| 1 | Dietician review | 15 min |
+| 2 | Diabetes review | 15 min |
+| 3 | Urologist review | 15 min |
+| 4 | General checkup | 30 min |
+| 5 | Follow up | 15 min |
+| 6 | Other specialist review | 15 min |
+
+Two things about this list changed how the duration rule reads, both recorded in
+`lib/appointment-types.ts`:
+
+- **There is no "Consultation" or "New patient" entry.** The type names the
+  service, not whether the clinic has met this person. So the 40-minute rule
+  cannot key off the type at all — it keys off the patient's own history, which
+  is what `lib/visits.ts` already answers. The design happened to be right for a
+  reason that only became visible with the real list.
+- **Four of the six are reviews**, and a review is a return visit by definition:
+  nobody has a diabetes review before something diagnosed the diabetes. That is
+  why they sit on the 15-minute side, and it is a firmer argument than the one
+  available under the old list. Still flagged for sign-off (open question 8).
+
+**Seed data was migrated, not just relabelled.** The old seed had every patient
+registered in 2024 with their only appointment in the last month — which meant
+"Follow up" rows following up on nothing, and a recall screen reporting "last
+seen 2 years ago" for patients the clinic sees regularly. Established patients
+now carry an earlier attended visit, so return visits are genuinely return
+visits and price at 15 minutes.
+
 ## 5. Seed Data Requirements
 
 - **10–20 patients** with varied preferred channels (mix of WhatsApp/SMS/email), some with missing email (SMS-only fallback scenario).
@@ -195,6 +394,7 @@ Seed data should follow these shapes. Use realistic Ghanaian names/phone formats
 - **A doctor availability pattern** that isn't a flat 9-5 — reflect the "shifts with her availability" detail from the proposal (e.g., some days fully booked/unavailable, some with only afternoon slots).
 - **Message log with 15+ entries** across all types and channels, including at least one "failed" delivery status to show that state exists.
 - **2-3 pending patient requests** (mix of reschedule and cancellation) sitting in the staff queue, unresolved.
+- **A recall cohort** (added with Section 4a) — six patients whose history reaches back past the six-month line: came once and never returned (8 months), attended regularly then stopped (13 months), booked twice and never attended, one inside the five-month warning band, and one already contacted this month so the cooldown is visible. Plus one record with no appointment at all, which exercises the *Needs checking* tab rather than the sweep. Their dates are relative to today, so the tail stays six months long as the prototype ages.
 
 ## 6. Key Interaction Flows to Demonstrate
 
@@ -208,7 +408,8 @@ Seed data should follow these shapes. Use realistic Ghanaian names/phone formats
 - Real authentication/login
 - Real WhatsApp/SMS/email sending (simulate only)
 - Real data persistence/database
-- Payments, clinical notes, multi-doctor support, or any item listed under "Future Enhancements" in the client proposal
+- Payments, clinical notes, or any item listed under "Future Enhancements" in the client proposal
+- ~~Multi-doctor support~~ **Partly superseded:** staff accounts now support several doctors (Section 4b), but booking and availability still run against one. See open question 11 — this is the gap to close or confirm.
 
 ## 8. UI Lock Criteria (client sign-off checklist)
 
@@ -221,6 +422,10 @@ Before treating the UI as locked and moving to database design, get explicit cli
 - [ ] Patient form fields match what's really captured
 
  at registration (cross-check against proposal's open question #1: sample paper data)
+- [ ] The 40/15-minute rule is right, and the two named Reviews really do belong on the 15-minute side (open question 8)
+- [ ] The recall list shows who the doctor meant, and the exclusions — already booked in, no-showed recently, no appointment on record — match how the clinic would work it (open question 9)
+- [ ] The six appointment types are complete and worded as the clinic would say them (Section 4c)
+- [ ] Adding a colleague works the way the clinic expects — front desk sets up the email, the joiner sets their own password, and nobody at the desk ever handles it (Section 4b)
 - [ ] Appointment statuses (booked/confirmed/attended/missed/rescheduled/**cancelled**) match clinic's actual workflow language — in particular, does the clinic distinguish "cancelled in advance" from "missed"? The attendance-rate stat depends on the answer.
 
 ## 8b. Open Questions Raised During the Build
@@ -232,8 +437,22 @@ Decisions made to keep building, each reversible. Confirm these alongside the Se
 3. ~~**Clinic contact details are placeholders**~~ **Resolved** — real details supplied and in `src/lib/clinic.ts`: Baiden Ave 1st St, Accra · 020 152 9933. The clinic logo (`public/images/rophe-logo.png`) is now the top-nav mark, the patient-page header, and the browser favicon.
 4. **"Confirm Attendance" changes the appointment to `confirmed`** rather than queuing a staff request. It doesn't alter the schedule, so staff keep control of date/time, and it avoids a queue full of items needing no decision. → *Confirm this matches how the clinic wants confirmations handled.*
 5. **Patients are notified when staff confirm or decline a request** (simulated message). Every other action affecting an appointment messages the patient, and a silent decline leaves someone waiting. → *Confirm the clinic wants this, since it adds message-log volume.*
-6. **Appointment types** are a fixed list (Consultation, Follow-up, Hypertension Review, Diabetes Review, General Check-up). → *Is this the real list?*
+6. ~~**Appointment types** are a fixed list (Consultation, Follow-up, Hypertension Review, Diabetes Review, General Check-up).~~ **Resolved** — the clinic supplied its real list (Section 4c). "Consultation" and "Hypertension Review" are gone; the seed was migrated onto the new vocabulary, with old hypertension reviews landing in *Other specialist review*. **Follow-on:** *Other specialist review* is a catch-all with nowhere to record which specialist — should it capture that, or does the notes field cover it?
 7. **Availability is a repeating weekly pattern, with no one-off exceptions.** `DoctorAvailability` keys on `dayOfWeek`, so the doctor sets the hours she *normally* works and they apply to every week. There is no way to say "I'm away Thursday the 21st" — closing that slot would close every Thursday. In practice a clinic needs both. → *How does the doctor currently handle a single day off, and should Phase 2 add date-specific exceptions (an `AvailabilityException` table keyed on a real date) or leave front desk to move the affected appointments by hand?* The availability screen currently states the limitation in plain English rather than pretending it doesn't exist.
+
+8. **The 15-minute rule was extended to every "… review".** The clinic named only "Follow up". Under its real type list (Section 4c) four of the six types are reviews, and a review is a return visit by definition — nobody has a diabetes review before something diagnosed the diabetes — so they inherit the 15 minutes. General checkup is the one non-review and keeps 30. → *Are all four reviews really 15 minutes — a dietician review in particular — and is 30 right for a returning patient's general checkup?* One line each in `lib/appointment-types.ts`.
+
+9. **Exclusions from the recall list.** A patient with a visit already booked never appears; neither does one whose last diary contact of any kind was inside the six months, which keeps recent no-shows on the dashboard's follow-up list where they are chased within days. → *Confirm both. If the clinic wants recent no-shows on the recall list too it is one condition in `lib/visits.ts`, but the same patient will then be chased from two screens.*
+
+   ~~A third category, "registered but never booked", was also on the recall list.~~ **Resolved** — the clinic confirmed registration and booking always happen together, so such a record cannot arise legitimately. It is now a data-quality flag (*Needs checking*), not outreach. **Follow-on worth asking:** if these are unfinished registrations, should front desk be able to delete a patient record with no appointments, or is a "merge duplicate" action what they actually need? Neither exists yet.
+
+10. **The 30-minute calendar grid does not divide by either clinic duration.** A 40-minute first visit holds two slots and gives 20 minutes back; a 15-minute follow-up holds one and gives 15 back. The booking form states this per booking rather than hiding it. Moving the grid to 15 minutes would pack follow-ups properly, but it doubles every row of the doctor's availability screen and 40 still would not divide cleanly. → *Does the doctor actually run back-to-back 15-minute follow-ups, or is a half-hour column per patient how the clinic really works?* This is the one question here that would change more than a constant.
+
+11. **Inviting a doctor outruns the rest of the prototype.** Staff accounts now support several doctors, each with a Doctor record — but booking and availability still assume one (`DOCTOR_ID = "doc-1"` on the availability screen, `docs[0]` in the booking form), and multi-doctor support is listed as out of scope in Section 7. So a newly invited doctor gets an account, a role and a landing page, but no separate diary. → *Is multi-doctor scheduling now in scope for Phase 2? The clinic's own appointment types name a dietician and a urologist, which suggests more than one clinician is already seeing patients.* This is the largest open item on the list.
+
+12. **Nothing can edit or deactivate an active staff account.** Invitations can be withdrawn, but a colleague who leaves cannot be switched off, and a role cannot be corrected after acceptance. → *Does the clinic need deactivation, and who may do it — any front-desk account, or an admin role the prototype does not yet have?*
+
+13. **The recall cooldown is 30 days and never gives up.** Someone contacted inside that window drops off the sweep, then returns to it. → *Is a month the right gap before a second attempt, and after how many silent attempts should the clinic stop trying?*
 
 ## 9. Design Notes
 

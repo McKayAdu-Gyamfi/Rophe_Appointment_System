@@ -56,11 +56,11 @@ export function DayView({
   const window = availabilityLabel(date, availability);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+    <div className="overflow-hidden rounded-panel bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
         <h2 className="text-sm font-semibold text-slate-900">{fmtDate(dateKey(date))}</h2>
         {window ? (
-          <span className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700">
+          <span className="rounded-full bg-teal-100 px-2.5 py-1 text-xs font-medium text-teal-700">
             Available {window}
           </span>
         ) : (
@@ -71,7 +71,7 @@ export function DayView({
         )}
       </div>
 
-      <ul className="divide-y divide-slate-100">
+      <ul className="divide-y divide-slate-200">
         {slots.map((slot) => (
           <li key={slot.time}>
             <SlotRow
@@ -137,7 +137,7 @@ function SlotRow({
             <button
               type="button"
               onClick={onBook}
-              className="group flex h-9 w-full items-center gap-2 rounded-lg border border-dashed border-slate-200 px-3 text-xs font-medium text-slate-400 transition hover:border-teal-300 hover:bg-teal-50/60 hover:text-teal-700"
+              className="group flex h-9 w-full items-center gap-2 rounded-lg border border-dashed border-slate-200 px-3 text-xs font-medium text-slate-400 transition hover:border-teal-300 hover:bg-teal-100/60 hover:text-teal-700"
             >
               <CalendarPlus className="h-3.5 w-3.5 opacity-0 transition group-hover:opacity-100" />
               Available — click to book
@@ -212,10 +212,10 @@ export function WeekView({
   );
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-x-auto rounded-panel bg-white">
       <div className="min-w-[52rem]">
         {/* Day headers */}
-        <div className="grid grid-cols-[4rem_repeat(7,minmax(0,1fr))] border-b border-slate-100 bg-slate-50/60">
+        <div className="grid grid-cols-[4rem_repeat(7,minmax(0,1fr))] border-b border-slate-200 bg-slate-100">
           <span />
           {days.map((day) => {
             const key = dateKey(day);
@@ -226,7 +226,7 @@ export function WeekView({
                 key={key}
                 type="button"
                 onClick={() => onPickDay(day)}
-                className="border-l border-slate-100 px-2 py-2.5 text-center transition hover:bg-white"
+                className="border-l border-slate-200 px-2 py-2.5 text-center transition hover:bg-white"
               >
                 <span
                   className={cn(
@@ -239,7 +239,7 @@ export function WeekView({
                 <span
                   className={cn(
                     "mx-auto mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-xs",
-                    isToday ? "bg-teal-600 font-semibold text-white" : "text-slate-500",
+                    isToday ? "bg-teal-700 font-semibold text-white" : "text-slate-500",
                   )}
                 >
                   {day.getDate()}
@@ -268,7 +268,7 @@ export function WeekView({
                 <div
                   key={`${dateKey(day)}-${time}`}
                   className={cn(
-                    "border-l border-slate-100 p-0.5",
+                    "border-l border-slate-200 p-0.5",
                     !available && appts.length === 0 && "bg-slate-50/70",
                   )}
                 >
@@ -300,7 +300,7 @@ export function WeekView({
                       type="button"
                       onClick={() => onBook(day, time)}
                       aria-label={`Book ${fmtDate(dateKey(day))} at ${fmtTime(time)}`}
-                      className="h-6 w-full rounded transition hover:bg-teal-50"
+                      className="h-6 w-full rounded transition hover:bg-teal-100"
                     />
                   ) : (
                     <div className="h-6" />
@@ -350,8 +350,8 @@ export function ListView({
   }, [rows]);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+    <div className="overflow-hidden rounded-panel bg-white">
+      <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-slate-900">
             {showPast ? `Past ${emptyLabel}` : `Upcoming ${emptyLabel}`}
@@ -363,7 +363,7 @@ export function ListView({
         <button
           type="button"
           onClick={() => setShowPast((v) => !v)}
-          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+          className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-200"
         >
           {showPast ? "Show upcoming" : "Show past"}
         </button>
@@ -374,10 +374,10 @@ export function ListView({
           No {showPast ? "past" : "upcoming"} {emptyLabel}.
         </p>
       ) : (
-        <div className="divide-y divide-slate-100">
+        <div className="divide-y divide-slate-200">
           {groups.map(([date, items]) => (
             <div key={date}>
-              <div className="flex items-center gap-2 bg-slate-50/60 px-4 py-2">
+              <div className="flex items-center gap-2 bg-slate-100 px-4 py-2">
                 <span className="text-xs font-semibold text-slate-600">{fmtDate(date)}</span>
                 {date === todayKey && (
                   <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-teal-700">
@@ -393,7 +393,7 @@ export function ListView({
                       <button
                         type="button"
                         onClick={() => onSelect(appt)}
-                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-100"
                       >
                         <span className="w-16 shrink-0 text-sm font-semibold text-slate-900">
                           {fmtTime(appt.time)}
