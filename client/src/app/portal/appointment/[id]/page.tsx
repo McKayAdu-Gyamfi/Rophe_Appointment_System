@@ -298,7 +298,7 @@ export default function PatientAppointmentPage() {
                   type="button"
                   onClick={() => void confirmAttendance()}
                   disabled={busy || isConfirmed}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {busy ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -377,7 +377,7 @@ export default function PatientAppointmentPage() {
                             className={cn(
                               "rounded-lg border px-3 py-2 text-sm font-medium transition",
                               preferredTime === time
-                                ? "border-teal-400 bg-teal-600 text-white"
+                                ? "border-teal-700 bg-teal-700 text-white"
                                 : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
                             )}
                           >
@@ -405,7 +405,7 @@ export default function PatientAppointmentPage() {
                     type="button"
                     onClick={() => void submitRequest("reschedule")}
                     disabled={busy || !preferredDate}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {busy && <Loader2 className="h-4 w-4 animate-spin" />}
                     Send request

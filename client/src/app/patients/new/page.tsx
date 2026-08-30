@@ -9,8 +9,8 @@ export default function AddPatientPage() {
   const router = useRouter();
 
   return (
-    <div className="px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-3xl">
+    <div className="px-4 pb-8 pt-1 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-3xl rounded-surface bg-slate-100 p-4 sm:p-5">
         <Link
           href="/patients"
           className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition hover:text-slate-800"
@@ -26,7 +26,7 @@ export default function AddPatientPage() {
           </p>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="rounded-panel bg-white p-5 sm:p-6">
           <PatientForm
             onCancel={() => router.push("/patients")}
             onSaved={(patient) => router.push(`/patients/${patient.id}`)}

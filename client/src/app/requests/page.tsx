@@ -168,7 +168,7 @@ export default function PendingRequestsPage() {
   if (loading) {
     return (
       <div className="px-4 py-10 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-4xl animate-pulse space-y-4">
+        <div className="mx-auto max-w-4xl animate-pulse space-y-4 rounded-surface bg-slate-100 p-4 sm:p-5">
           <div className="h-8 w-56 rounded-lg bg-slate-200" />
           <div className="h-40 rounded-xl bg-slate-200" />
           <div className="h-40 rounded-xl bg-slate-200" />
@@ -178,10 +178,9 @@ export default function PendingRequestsPage() {
   }
 
   return (
-    <div className="px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-4xl">
+    <div className="px-4 pb-8 pt-1 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-4xl rounded-surface bg-slate-100 p-4 sm:p-5">
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-slate-900">Pending requests</h1>
           <p className="mt-1 text-sm text-slate-500">
             Reschedule and cancellation requests submitted by patients. Nothing changes on the
             calendar until you confirm.
@@ -199,7 +198,7 @@ export default function PendingRequestsPage() {
           </div>
 
           {pending.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-12 text-center shadow-sm">
+            <div className="rounded-panel bg-white px-4 py-12 text-center">
               <Check className="mx-auto h-8 w-8 text-teal-400" />
               <p className="mt-2 text-sm font-medium text-slate-600">
                 No requests waiting — the queue is clear.
@@ -234,14 +233,14 @@ export default function PendingRequestsPage() {
                 {resolved.length}
               </span>
             </div>
-            <ul className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <ul className="overflow-hidden rounded-panel bg-white">
               {resolved.map((request) => {
                 const patient = patientMap.get(request.patientId);
                 const style = REQUEST_STATUS_STYLES[request.status];
                 return (
                   <li
                     key={request.id}
-                    className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0"
+                    className="flex items-center gap-3 border-b border-slate-200 px-4 py-3 last:border-b-0"
                   >
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-600">
                       {patient ? initials(patient.fullName) : "?"}
@@ -298,9 +297,9 @@ function RequestCard({
   const isCancellation = request.requestType === "cancellation";
 
   return (
-    <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+    <article className="overflow-hidden rounded-panel bg-white">
       {/* Who + what */}
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
             {patient ? initials(patient.fullName) : "?"}
@@ -338,7 +337,7 @@ function RequestCard({
       {/* The change being asked for */}
       <div className="px-4 py-4">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="rounded-lg border border-slate-200 px-3 py-2">
+          <div className="rounded-lg bg-slate-100 px-3 py-2">
             <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
               Currently
             </p>
@@ -359,7 +358,7 @@ function RequestCard({
           <div
             className={cn(
               "rounded-lg border px-3 py-2",
-              isCancellation ? "border-rose-200 bg-rose-50" : "border-teal-200 bg-teal-50",
+              isCancellation ? "border-rose-200 bg-rose-50" : "border-teal-200 bg-teal-100",
             )}
           >
             <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
@@ -402,12 +401,12 @@ function RequestCard({
 
       {/* Decision */}
       {canAct && (
-        <div className="flex flex-wrap gap-2 border-t border-slate-100 bg-slate-50/60 px-4 py-3">
+        <div className="flex flex-wrap gap-2 border-t border-slate-200 bg-slate-100 px-4 py-3">
           <button
             type="button"
             onClick={() => onRespond("confirmed")}
             disabled={disabled}
-            className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
             Confirm
@@ -416,7 +415,7 @@ function RequestCard({
             type="button"
             onClick={() => onRespond("declined")}
             disabled={disabled}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <X className="h-4 w-4" />
             Decline

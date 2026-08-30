@@ -14,12 +14,29 @@ import {
   Pencil,
   Phone,
   UserRound,
+  CalendarCheck,
+  CheckCircle2,
+  XCircle,
+  UserRoundSearch,
+  Clock3,
 } from "lucide-react";
-import { getAppointments, getPatient } from "@/lib/api";
+import { getAppointments, getPatient, getPatientVisitSummary } from "@/lib/api";
 import type { Appointment, Patient } from "@/lib/types";
-import { APPOINTMENT_STATUS_STYLES, CHANNEL_STYLES } from "@/lib/status-styles";
+import {
+  APPOINTMENT_STATUS_STYLES,
+  CHANNEL_STYLES,
+  RECALL_STATE_STYLES,
+} from "@/lib/status-styles";
+import {
+  RECALL_MONTHS,
+  elapsedLabel,
+  reasonLabel,
+  type PatientVisitSummary,
+} from "@/lib/visits";
+import { FIRST_VISIT_MINUTES } from "@/lib/appointment-types";
 import { age, fmtDate, fmtLongDate, fmtTime, initials, startOfDay } from "@/lib/format";
 import { useRole } from "@/lib/role-context";
+import { StatCard } from "@/components/dashboard/stat-card";
 import { cn } from "@/lib/utils";
 
 export default function PatientDetailPage() {
@@ -29,15 +46,21 @@ export default function PatientDetailPage() {
 
   const [patient, setPatient] = useState<Patient | undefined>();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [summary, setSummary] = useState<PatientVisitSummary | undefined>();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const [p, appts] = await Promise.all([getPatient(id), getAppointments()]);
+      const [p, appts, visitSummary] = await Promise.all([
+        getPatient(id),
+        getAppointments(),
+        getPatientVisitSummary(id),
+      ]);
       if (!active) return;
       setPatient(p);
       setAppointments(appts.filter((a) => a.patientId === id));
+      setSummary(visitSummary);
       setLoading(false);
     })();
     return () => {
@@ -74,7 +97,7 @@ export default function PatientDetailPage() {
   if (loading) {
     return (
       <div className="px-4 py-10 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-5xl animate-pulse space-y-4">
+        <div className="mx-auto max-w-5xl animate-pulse space-y-4 rounded-surface bg-slate-100 p-4 sm:p-5">
           <div className="h-8 w-56 rounded-lg bg-slate-200" />
           <div className="h-40 rounded-xl bg-slate-200" />
           <div className="h-72 rounded-xl bg-slate-200" />
@@ -94,7 +117,7 @@ export default function PatientDetailPage() {
           </p>
           <Link
             href="/patients"
-            className="mt-6 inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700"
+            className="mt-6 inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to patients
@@ -107,8 +130,8 @@ export default function PatientDetailPage() {
   const channelStyle = CHANNEL_STYLES[patient.preferredChannel];
 
   return (
-    <div className="px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl">
+    <div className="px-4 pb-8 pt-1 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl rounded-surface bg-slate-100 p-4 sm:p-5">
         {/* Doctors reach this page from their schedule, not the patients list —
             send them back where they came from. */}
         <Link
@@ -122,7 +145,7 @@ export default function PatientDetailPage() {
         {/* Identity header */}
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-4">
-            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-teal-50 text-lg font-semibold text-teal-700">
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-teal-100 text-lg font-semibold text-teal-700">
               {initials(patient.fullName)}
             </span>
             <div className="min-w-0">
@@ -147,14 +170,14 @@ export default function PatientDetailPage() {
             <div className="flex flex-wrap gap-2">
               <Link
                 href={`/patients/${patient.id}/edit`}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
               >
                 <Pencil className="h-4 w-4" />
                 Edit
               </Link>
               <Link
                 href={`/appointments/book?patientId=${patient.id}`}
-                className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
+                className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800"
               >
                 <CalendarPlus className="h-4 w-4" />
                 Book appointment
@@ -163,21 +186,57 @@ export default function PatientDetailPage() {
           )}
         </div>
 
+        {summary && <VisitStatusBanner summary={summary} canEdit={canEdit} patientId={patient.id} />}
+
         {/* Visit stats */}
-        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <Stat label="Total appointments" value={stats.total} />
-          <Stat label="Attended" value={stats.attended} tone="teal" />
-          <Stat label="Missed" value={stats.missed} tone="rose" />
-          <Stat label="Upcoming" value={stats.upcoming} tone="amber" />
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label="Last seen"
+            value={
+              summary?.lastVisit ? elapsedLabel(summary.monthsSinceAnchor) : "Never"
+            }
+            icon={Clock3}
+            tone={summary?.state === "lapsed" ? "alert" : "accent"}
+            note={
+              summary?.lastVisit
+                ? fmtLongDate(summary.lastVisit.date)
+                : stats.total === 0
+                  ? "Registered, never booked"
+                  : "Booked before, never attended"
+            }
+          />
+          <StatCard
+            label="Attended"
+            value={String(stats.attended)}
+            icon={CheckCircle2}
+            note={
+              stats.attended + stats.missed === 0
+                ? "No completed visits yet"
+                : `${Math.round((stats.attended / (stats.attended + stats.missed)) * 100)}% turn-up rate`
+            }
+          />
+          <StatCard
+            label="Missed"
+            value={String(stats.missed)}
+            icon={XCircle}
+            tone={stats.missed > 0 ? "alert" : "accent"}
+            note={stats.missed === 0 ? "Never missed a visit" : "Worth a follow-up call"}
+          />
+          <StatCard
+            label="Upcoming"
+            value={String(stats.upcoming)}
+            icon={CalendarCheck}
+            note={stats.upcoming === 0 ? "Nothing booked" : "Already on the calendar"}
+          />
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
           {/* Contact details */}
-          <section className="h-fit overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-100 px-4 py-3">
+          <section className="h-fit overflow-hidden rounded-panel bg-white">
+            <div className="border-b border-slate-200 px-4 py-3">
               <h2 className="text-sm font-semibold text-slate-900">Contact details</h2>
             </div>
-            <dl className="divide-y divide-slate-100">
+            <dl className="divide-y divide-slate-200">
               <Field icon={<Phone className="h-4 w-4" />} label="Phone" value={patient.phone} />
               <Field
                 icon={<MessageCircle className="h-4 w-4" />}
@@ -219,8 +278,8 @@ export default function PatientDetailPage() {
 
           {/* Appointments */}
           <div className="space-y-6">
-            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
+            <section className="overflow-hidden rounded-panel bg-white">
+              <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
                 <h2 className="text-sm font-semibold text-slate-900">Upcoming appointments</h2>
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                   {upcoming.length}
@@ -229,7 +288,7 @@ export default function PatientDetailPage() {
               {upcoming.length === 0 ? (
                 <p className="px-4 py-8 text-sm text-slate-400">No upcoming appointments.</p>
               ) : (
-                <ul className="divide-y divide-slate-100">
+                <ul className="divide-y divide-slate-200">
                   {upcoming.map((a) => (
                     <li key={a.id}>
                       <AppointmentRow appt={a} />
@@ -239,8 +298,8 @@ export default function PatientDetailPage() {
               )}
             </section>
 
-            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
+            <section className="overflow-hidden rounded-panel bg-white">
+              <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
                 <h2 className="text-sm font-semibold text-slate-900">Visit history</h2>
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                   {history.length}
@@ -251,7 +310,7 @@ export default function PatientDetailPage() {
                   No past visits recorded for this patient yet.
                 </p>
               ) : (
-                <ul className="divide-y divide-slate-100">
+                <ul className="divide-y divide-slate-200">
                   {history.map((a) => (
                     <li key={a.id}>
                       <AppointmentRow appt={a} />
@@ -269,29 +328,6 @@ export default function PatientDetailPage() {
 
 // --- sub-components -------------------------------------------------------
 
-const STAT_TONES = {
-  slate: "text-slate-900",
-  teal: "text-teal-600",
-  rose: "text-rose-600",
-  amber: "text-amber-600",
-} as const;
-
-function Stat({
-  label,
-  value,
-  tone = "slate",
-}: {
-  label: string;
-  value: number;
-  tone?: keyof typeof STAT_TONES;
-}) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className={cn("text-2xl font-semibold", STAT_TONES[tone])}>{value}</p>
-      <p className="mt-0.5 text-xs font-medium text-slate-500">{label}</p>
-    </div>
-  );
-}
 
 function Field({
   icon,
@@ -346,4 +382,109 @@ function AppointmentRow({ appt }: { appt: Appointment }) {
       </span>
     </div>
   );
+}
+
+/**
+ * Where this patient stands against the clinic's six-month rule.
+ *
+ * Only shown when it changes what staff should do — a patient seen last month
+ * needs no banner, and one who is simply due back is already covered by the
+ * "Last seen" tile. The three cases worth interrupting for are: they are
+ * overdue, they are about to be, or the visit on the calendar is their first
+ * and therefore needs the long slot.
+ */
+function VisitStatusBanner({
+  summary,
+  canEdit,
+  patientId,
+}: {
+  summary: PatientVisitSummary;
+  canEdit: boolean;
+  patientId: string;
+}) {
+  const style = RECALL_STATE_STYLES[summary.state];
+
+  if (summary.state === "lapsed" || summary.state === "lapsing") {
+    const overdue = summary.state === "lapsed";
+    return (
+      <div
+        className={cn(
+          "mb-6 flex flex-wrap items-center gap-3 rounded-xl px-4 py-3",
+          overdue ? "bg-rose-50" : "bg-amber-50",
+        )}
+      >
+        <span
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+            overdue ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-800",
+          )}
+        >
+          <UserRoundSearch className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p
+            className={cn(
+              "text-sm font-semibold",
+              overdue ? "text-rose-900" : "text-amber-900",
+            )}
+          >
+            {overdue
+              ? `Not seen for ${RECALL_MONTHS} months or more`
+              : "Approaching the six-month mark"}
+            {summary.recentlyContacted && " — recall already sent"}
+          </p>
+          <p className={cn("text-xs", overdue ? "text-rose-700" : "text-amber-800")}>
+            {reasonLabel(summary)} · last seen {elapsedLabel(summary.monthsSinceAnchor)}
+          </p>
+        </div>
+        {canEdit && (
+          <div className="flex shrink-0 gap-2">
+            <Link
+              href="/recalls"
+              className="rounded-lg bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Recall list
+            </Link>
+            <Link
+              href={`/appointments/book?patientId=${patientId}`}
+              className="rounded-lg bg-teal-700 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-teal-800"
+            >
+              Book them in
+            </Link>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Booked in, but never actually seen — the appointment needs the long slot.
+  if (summary.isFirstVisit && summary.nextAppointment) {
+    return (
+      <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl bg-teal-50 px-4 py-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-100 text-teal-800">
+          <Clock3 className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-teal-900">
+            First visit — {FIRST_VISIT_MINUTES} minutes
+          </p>
+          <p className="text-xs text-teal-700">
+            The clinic has not seen this patient before, so their appointment on{" "}
+            {fmtDate(summary.nextAppointment.date)} is booked at the new-patient length.
+          </p>
+        </div>
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
+            style.badge,
+          )}
+        >
+          <span className={cn("h-1.5 w-1.5 rounded-full", style.dot)} />
+          {style.label}
+        </span>
+      </div>
+    );
+  }
+
+  return null;
 }
