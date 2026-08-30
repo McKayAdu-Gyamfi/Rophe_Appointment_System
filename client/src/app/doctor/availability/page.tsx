@@ -168,7 +168,7 @@ export default function DoctorAvailabilityPage() {
   if (loading) {
     return (
       <div className="px-4 py-10 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-6xl animate-pulse space-y-4">
+        <div className="mx-auto max-w-6xl animate-pulse space-y-4 rounded-surface bg-slate-100 p-4 sm:p-5">
           <div className="h-8 w-56 rounded-lg bg-slate-200" />
           <div className="h-[34rem] rounded-xl bg-slate-200" />
         </div>
@@ -177,18 +177,17 @@ export default function DoctorAvailabilityPage() {
   }
 
   return (
-    <div className="px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl">
+    <div className="px-4 pb-8 pt-1 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl rounded-surface bg-slate-100 p-4 sm:p-5">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">My weekly availability</h1>
             <p className="mt-1 text-sm text-slate-500">
               The hours you normally work. This pattern repeats every week until you change it.
             </p>
           </div>
           <Link
             href="/doctor/schedule"
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
           >
             <CalendarCheck className="h-4 w-4" />
             My schedule
@@ -197,7 +196,7 @@ export default function DoctorAvailabilityPage() {
 
         {/* How this works — the page is a repeating template, not a diary, and
             that distinction isn't obvious sitting next to "My schedule". */}
-        <div className="mb-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-5 rounded-panel bg-white p-4">
           <div className="flex items-center gap-2">
             <Repeat className="h-4 w-4 text-teal-600" />
             <h2 className="text-sm font-semibold text-slate-900">How this works</h2>
@@ -221,7 +220,7 @@ export default function DoctorAvailabilityPage() {
               },
             ].map((step) => (
               <li key={step.n} className="flex gap-2.5">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-50 text-[11px] font-semibold text-teal-700">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-100 text-[11px] font-semibold text-teal-700">
                   {step.n}
                 </span>
                 <span className="min-w-0">
@@ -247,10 +246,10 @@ export default function DoctorAvailabilityPage() {
         </div>
 
         {/* Grid */}
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-panel bg-white">
           <div className="min-w-[46rem]">
             {/* Header row: day names + whole-day toggle */}
-            <div className="grid grid-cols-[5rem_repeat(7,minmax(0,1fr))] border-b border-slate-100 bg-slate-50/60">
+            <div className="grid grid-cols-[5rem_repeat(7,minmax(0,1fr))] border-b border-slate-200 bg-slate-100">
               <span />
               {DAYS.map(({ index, label, short }) => {
                 const open = openTimesFor(index);
@@ -261,8 +260,8 @@ export default function DoctorAvailabilityPage() {
                   <div
                     key={index}
                     className={cn(
-                      "border-l border-slate-100 px-2 py-2.5 text-center",
-                      isToday && "bg-teal-50/60",
+                      "border-l border-slate-200 px-2 py-2.5 text-center",
+                      isToday && "bg-teal-100/60",
                     )}
                   >
                     <span
@@ -325,7 +324,7 @@ export default function DoctorAvailabilityPage() {
                   const booked = bookedTimesFor(index).has(time);
 
                   return (
-                    <div key={`${index}-${time}`} className="border-l border-slate-100 p-0.5">
+                    <div key={`${index}-${time}`} className="border-l border-slate-200 p-0.5">
                       <button
                         type="button"
                         onClick={() => toggleSlot(index, time)}
@@ -402,8 +401,8 @@ export default function DoctorAvailabilityPage() {
                 <li
                   key={index}
                   className={cn(
-                    "flex items-center justify-between rounded-lg border bg-white px-3 py-2 text-sm shadow-sm",
-                    windows.length > 0 ? "border-slate-200" : "border-slate-100",
+                    "flex items-center justify-between rounded-lg border bg-white px-3 py-2 text-sm",
+                    windows.length > 0 ? "border-slate-200" : "border-slate-200",
                   )}
                 >
                   <span

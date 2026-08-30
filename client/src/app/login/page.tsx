@@ -40,7 +40,10 @@ export default function LoginPage() {
   useEffect(() => {
     let active = true;
     void getStaffUsers().then((users) => {
-      if (active) setDemoAccounts(users);
+      // Only seeded accounts share DEMO_PASSWORD. An invited colleague has no
+      // password at all yet, so listing them here would offer a shortcut that
+      // cannot work.
+      if (active) setDemoAccounts(users.filter((u) => u.status === "active"));
     });
     return () => {
       active = false;

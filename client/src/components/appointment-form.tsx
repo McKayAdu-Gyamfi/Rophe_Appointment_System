@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CalendarOff, Check, Loader2, Search, UserPlus, X } from "lucide-react";
+import { CalendarOff, Check, Clock3, Loader2, Search, UserPlus, X } from "lucide-react";
 import {
   bookAppointment,
   getAppointments,
@@ -22,6 +22,16 @@ import {
   toMinutes,
   windowContaining,
 } from "@/lib/schedule";
+import {
+  APPOINTMENT_TYPES,
+  DURATION_OPTIONS,
+  defaultDurationFor,
+  durationRationale,
+  isRuleDuration,
+} from "@/lib/appointment-types";
+import { isFirstVisit as hasNeverAttended } from "@/lib/visits";
+import { SLOT_MINUTES } from "@/lib/schedule";
+import { slotSlack } from "@/lib/appointment-types";
 import { NewPatientDialog } from "./new-patient-dialog";
 import { cn } from "@/lib/utils";
 
@@ -32,16 +42,6 @@ import { cn } from "@/lib/utils";
 // the existing one and moves the slot. Either way the submit path is
 // book/update → simulated confirmation message → message log entry → toast.
 // ---------------------------------------------------------------------------
-
-const APPOINTMENT_TYPES = [
-  "Consultation",
-  "Follow-up",
-  "Hypertension Review",
-  "Diabetes Review",
-  "General Check-up",
-];
-
-const DURATIONS = [15, 30, 45, 60];
 
 function digits(value: string): string {
   return value.replace(/\D/g, "");
@@ -77,7 +77,15 @@ export function AppointmentForm({
   const [type, setType] = useState(appointment?.appointmentType ?? APPOINTMENT_TYPES[0]);
   const [date, setDate] = useState(appointment?.date ?? initialDate ?? dateKey(new Date()));
   const [time, setTime] = useState(appointment?.time ?? initialTime ?? "");
-  const [duration, setDuration] = useState(appointment?.durationMinutes ?? 30);
+  const [duration, setDuration] = useState(
+    appointment?.durationMinutes ?? defaultDurationFor({ appointmentType: type, isFirstVisit: false }),
+  );
+  /**
+   * Set once staff pick a duration by hand. The rule then stops overwriting
+   * them — a clinician who allowed an hour for a complicated case should not
+   * lose it because they went back and corrected the appointment type.
+   */
+  const [durationTouched, setDurationTouched] = useState(false);
   const [notes, setNotes] = useState(appointment?.notes ?? "");
 
   const [error, setError] = useState<string | null>(null);
@@ -108,6 +116,36 @@ export function AppointmentForm({
     () => patients.find((p) => p.id === patientId),
     [patients, patientId],
   );
+
+  /**
+   * Has the clinic ever actually seen this patient? Drives the 40-minute
+   * first-visit rule. A no-show does not count — the doctor still has never
+   * met them, and the appointment still needs the long slot.
+   */
+  const firstVisit = useMemo(
+    () => (patientId ? hasNeverAttended(patientId, appointments) : false),
+    [patientId, appointments],
+  );
+
+  const durationInput = useMemo(
+    () => ({ appointmentType: type, isFirstVisit: firstVisit }),
+    [type, firstVisit],
+  );
+
+  // Re-derive the duration whenever the two facts behind the rule change.
+  // Deliberately keyed rather than run on every render: it must not fight a
+  // staff member who has just chosen 60 minutes, and it must not overwrite the
+  // duration a reschedule inherited, which was decided when the visit was
+  // booked.
+  const ruleKey = `${patientId}|${type}`;
+  const lastRuleKey = useRef<string | null>(isReschedule ? ruleKey : null);
+
+  useEffect(() => {
+    if (loading || durationTouched) return;
+    if (!patientId || lastRuleKey.current === ruleKey) return;
+    lastRuleKey.current = ruleKey;
+    setDuration(defaultDurationFor(durationInput));
+  }, [loading, durationTouched, patientId, ruleKey, durationInput]);
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -242,7 +280,7 @@ export function AppointmentForm({
       {/* 1. Patient */}
       <Section step={1} title="Patient">
         {selectedPatient ? (
-          <div className="flex items-center gap-3 rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3">
+          <div className="flex items-center gap-3 rounded-xl border border-teal-200 bg-teal-100/60 px-4 py-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-xs font-semibold text-teal-700">
               {initials(selectedPatient.fullName)}
             </span>
@@ -280,13 +318,13 @@ export function AppointmentForm({
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search by name or phone"
                   aria-label="Search patients"
-                  className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm shadow-sm outline-none transition placeholder:text-slate-400 focus:border-teal-400 focus:ring-2 focus:ring-teal-100"
+                  className="w-full rounded-lg bg-slate-100 py-2.5 pl-10 pr-3 text-sm outline-none transition placeholder:text-slate-500 focus:ring-2 focus:ring-teal-600"
                 />
               </div>
               <button
                 type="button"
                 onClick={() => setDialogOpen(true)}
-                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
               >
                 <UserPlus className="h-4 w-4" />
                 New patient
@@ -294,7 +332,7 @@ export function AppointmentForm({
             </div>
 
             {query.trim() && (
-              <ul className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+              <ul className="overflow-hidden rounded-panel bg-white">
                 {matches.length === 0 ? (
                   <li className="px-4 py-6 text-center text-sm text-slate-400">
                     No patient matches “{query}”.
@@ -308,7 +346,7 @@ export function AppointmentForm({
                           setPatientId(p.id);
                           setQuery("");
                         }}
-                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-slate-50"
+                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-slate-100"
                       >
                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-600">
                           {initials(p.fullName)}
@@ -340,7 +378,7 @@ export function AppointmentForm({
               id="type"
               value={type}
               onChange={(e) => setType(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-teal-400 focus:ring-2 focus:ring-teal-100"
+              className="w-full rounded-lg bg-slate-100 px-3 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-teal-600"
             >
               {APPOINTMENT_TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -356,10 +394,13 @@ export function AppointmentForm({
             <select
               id="duration"
               value={duration}
-              onChange={(e) => setDuration(Number(e.target.value))}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-teal-400 focus:ring-2 focus:ring-teal-100"
+              onChange={(e) => {
+                setDuration(Number(e.target.value));
+                setDurationTouched(true);
+              }}
+              className="w-full rounded-lg bg-slate-100 px-3 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-teal-600"
             >
-              {DURATIONS.map((d) => (
+              {DURATION_OPTIONS.map((d) => (
                 <option key={d} value={d}>
                   {d} minutes
                 </option>
@@ -367,6 +408,17 @@ export function AppointmentForm({
             </select>
           </div>
         </div>
+
+        <DurationNote
+          patientName={selectedPatient?.fullName}
+          duration={duration}
+          overridden={durationTouched && !isRuleDuration(duration, durationInput)}
+          rationale={durationRationale(durationInput)}
+          onReset={() => {
+            setDurationTouched(false);
+            setDuration(defaultDurationFor(durationInput));
+          }}
+        />
       </Section>
 
       {/* 3. Date & slot */}
@@ -385,7 +437,7 @@ export function AppointmentForm({
                   setDate(e.target.value);
                   setTime(""); // a slot on one day means nothing on another
                 }}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-teal-400 focus:ring-2 focus:ring-teal-100"
+                className="rounded-lg bg-slate-100 px-3 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-teal-600"
               />
             </div>
             <p className="pb-2.5 text-xs text-slate-500">{fmtLongDate(date)}</p>
@@ -417,10 +469,10 @@ export function AppointmentForm({
                       className={cn(
                         "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition",
                         active
-                          ? "border-teal-400 bg-teal-600 text-white shadow-sm"
+                          ? "border-teal-700 bg-teal-700 text-white"
                           : disabled
-                            ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300 line-through"
-                            : "border-slate-200 bg-white text-slate-700 hover:border-teal-300 hover:bg-teal-50",
+                            ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-300 line-through"
+                            : "border-slate-200 bg-white text-slate-700 hover:border-teal-300 hover:bg-teal-100",
                       )}
                     >
                       {active && <Check className="h-3.5 w-3.5" />}
@@ -455,7 +507,7 @@ export function AppointmentForm({
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Anything the doctor should know before the visit."
           aria-label="Appointment notes"
-          className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition placeholder:text-slate-400 focus:border-teal-400 focus:ring-2 focus:ring-teal-100"
+          className="w-full resize-y rounded-lg bg-slate-100 px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-500 focus:ring-2 focus:ring-teal-600"
         />
       </Section>
 
@@ -463,11 +515,11 @@ export function AppointmentForm({
         <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-5">
+      <div className="flex flex-wrap items-center gap-3 border-t border-slate-200 pt-5">
         <button
           type="submit"
           disabled={submitting}
-          className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
           {isReschedule ? "Save & reschedule" : "Book appointment"}
@@ -476,7 +528,7 @@ export function AppointmentForm({
           type="button"
           onClick={() => router.back()}
           disabled={submitting}
-          className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+          className="rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
         >
           Cancel
         </button>
@@ -528,5 +580,78 @@ function Section({
       </div>
       <div className="pl-0 sm:pl-9">{children}</div>
     </section>
+  );
+}
+
+/**
+ * Why the duration says what it says.
+ *
+ * The clinic's rule — 40 minutes for a first visit, 15 for a follow-up — is
+ * the kind of thing front desk currently holds in their head. Pre-filling it
+ * silently would only move the guesswork: staff would not know whether the
+ * number was chosen for a reason or left at a default. So the rule is applied
+ * and then stated, with a way back to it after an override.
+ *
+ * The slack line is the honest part. The calendar grid is 30 minutes wide, so
+ * neither clinic duration divides into it: a 40-minute visit holds an hour,
+ * a 15-minute one holds half. Front desk should see that before they wonder
+ * where the doctor's morning went.
+ */
+function DurationNote({
+  patientName,
+  duration,
+  overridden,
+  rationale,
+  onReset,
+}: {
+  patientName?: string;
+  duration: number;
+  overridden: boolean;
+  rationale: string;
+  onReset: () => void;
+}) {
+  if (!patientName) {
+    return (
+      <p className="mt-3 text-xs text-slate-500">
+        Pick a patient and the length is set from the clinic&rsquo;s rule — 40 minutes for a
+        first visit, 15 for a follow-up.
+      </p>
+    );
+  }
+
+  const slack = slotSlack(duration, SLOT_MINUTES);
+  const slots = Math.max(1, Math.ceil(duration / SLOT_MINUTES));
+
+  return (
+    <div
+      className={cn(
+        "mt-3 flex flex-wrap items-start gap-2.5 rounded-lg px-3 py-2.5 text-xs",
+        overridden ? "bg-amber-50 text-amber-900" : "bg-teal-50 text-teal-900",
+      )}
+    >
+      <Clock3 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <div className="min-w-0 flex-1 space-y-1">
+        {overridden ? (
+          <p>
+            <span className="font-semibold">Set by hand.</span> {rationale}
+          </p>
+        ) : (
+          <p>{rationale}</p>
+        )}
+        <p className={overridden ? "text-amber-700" : "text-teal-700"}>
+          Holds {slots === 1 ? "one 30-minute slot" : `${slots} 30-minute slots`}
+          {slack > 0 ? ` — ${slack} minutes of the last one stay free.` : "."}
+        </p>
+      </div>
+      {overridden && (
+        <button
+          type="button"
+          onClick={onReset}
+          className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-900 transition hover:bg-amber-200"
+        >
+          Use the rule
+        </button>
+      )}
+    </div>
   );
 }
