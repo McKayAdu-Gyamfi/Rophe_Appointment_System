@@ -1,30 +1,46 @@
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import { env } from "./config/env";
-import { patientRoutes } from "./routes/patientRoutes";
-import { appointmentRoutes } from "./routes/appointmentRoutes";
-import { notFound, errorHandler } from "./middleware/errorHandler";
+import { authRoutes } from "./routes/authRoutes";
+import { errorHandler, notFound } from "./middleware/errorHandler";
+import { requestLogger } from "./middleware/requestLogger";
 
 const app = express();
 
 // ---- Global middleware ----
-app.use(cors({ origin: env.clientUrl }));
-app.use(express.json());
+//
+// credentials:true is required for the session cookie to travel; with it, the
+// CORS origin must be an explicit URL and can never be "*". Both halves of the
+// API depend on that, so it is set once here.
+app.use(
+  cors({
+    origin: env.clientUrl,
+    credentials: true,
+  }),
+);
+app.use(express.json({ limit: "1mb" }));
+app.use(cookieParser());
+app.use(requestLogger);
 
 // ---- Health check ----
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", service: "rophe-server" });
+  res.json({ status: "ok", service: "rophe-server", env: env.nodeEnv });
 });
 
 // ---- Feature routes ----
-app.use("/api/patients", patientRoutes);
-app.use("/api/appointments", appointmentRoutes);
+//
+// Track A adds: /api/staff, /api/doctors, /api/appointments, /api/appointment-types
+// Track B adds: /api/patients, /api/messages, /api/templates, /api/requests,
+//               /api/recalls, /api/portal
+// Mount them here; everything else about a route lives in its own folder, so
+// this line should be the only merge conflict either of you sees.
+app.use("/api/auth", authRoutes);
 
 // ---- Fallbacks ----
 app.use(notFound);
 app.use(errorHandler);
 
-// ---- Start ----
 app.listen(env.port, () => {
-  console.log(`Rophe server running on http://localhost:${env.port}`);
+  console.log(`Rophe server running on http://localhost:${env.port} [${env.nodeEnv}]`);
 });

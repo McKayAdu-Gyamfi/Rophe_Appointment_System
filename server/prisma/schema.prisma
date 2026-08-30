@@ -1,5 +1,27 @@
 // Prisma schema — Rophe Specialist Care
-// Learn more: https://pris.ly/d/prisma-schema
+//
+// Phase 2. This is the frontend prototype's data model (client/src/lib/types.ts)
+// made real, plus the things a prototype could afford to skip: password hashes,
+// sessions, provider correlation IDs, and a portal link that isn't guessable.
+//
+// Four decisions were taken before this file existed, and they are why it is
+// shaped the way it is:
+//
+//   1. Multi-doctor, fully. Doctor is a first-class record; availability and
+//      appointments hang off it. Nothing assumes a single clinician.
+//   2. Appointment types are a TABLE, not an enum. The clinic changed its list
+//      once mid-build; the next change should be a row edit, not a migration.
+//      Their durations live with them, which is why the 40/15/30 rule is data.
+//   3. Availability exceptions exist from day one — "I'm away Thursday the
+//      21st" is a real date, not a repeating weekday.
+//   4. Times are stored as UTC instants (`startsAt`) plus a duration, not as a
+//      date string and a clock string. Ghana is UTC+0 with no DST, so this
+//      costs nothing locally and makes overlap queries sane. The API splits it
+//      back into the `date` / `time` pair the frontend already reads.
+//
+// Naming follows client/src/lib/types.ts wherever the two describe the same
+// thing (`fullName`, not `name`), so the API layer is a mapper rather than a
+// translation.
 
 generator client {
   provider = "prisma-client-js"
@@ -10,14 +32,51 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ---------- Users (staff & doctors) ----------
+// ---------------------------------------------------------------------------
+// Staff accounts
+// ---------------------------------------------------------------------------
+
+/// Anyone who signs in. Patients never appear here — they reach their
+/// appointment through a PortalAccessToken.
 model User {
-  id           String        @id @default(cuid())
-  email        String        @unique
-  name         String
-  role         Role          @default(FRONT_DESK)
-  createdAt    DateTime      @default(now())
-  appointments Appointment[] @relation("DoctorAppointments")
+  id       String @id @default(cuid())
+  email    String @unique
+  fullName String
+  staffId  String @unique
+  jobTitle String
+
+  /// Argon2id. NULL while the account is INVITED — front desk creates the
+  /// account but never chooses the password, so between invitation and
+  /// activation there is genuinely nothing here. Nullable on purpose: it
+  /// stops any code path assuming a credential exists.
+  passwordHash String?
+
+  role   Role       @default(FRONT_DESK)
+  status UserStatus @default(INVITED)
+
+  /// SHA-256 of the invite token. The token itself is a credential and is
+  /// never stored — the same reasoning as passwordHash. Cleared on activation
+  /// so a link cannot be replayed; replaced (not added to) on resend.
+  inviteTokenHash String?   @unique
+  inviteExpiresAt DateTime?
+  invitedAt       DateTime?
+  activatedAt     DateTime?
+
+  invitedById  String?
+  invitedBy    User?   @relation("StaffInvitations", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedUsers User[]  @relation("StaffInvitations")
+
+  /// Present only on DOCTOR accounts.
+  doctor Doctor?
+
+  sessions          Session[]
+  auditLogs         AuditLog[]
+  respondedRequests PatientRequest[] @relation("RequestResponder")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
 }
 
 enum Role {
@@ -26,18 +85,121 @@ enum Role {
   DOCTOR
 }
 
-// ---------- Patients ----------
+enum UserStatus {
+  /// Created, no password yet, cannot sign in.
+  INVITED
+  ACTIVE
+  /// Left the clinic. Kept rather than deleted so their audit trail survives.
+  DISABLED
+}
+
+/// Server-side sessions rather than stateless tokens, so a session can actually
+/// be revoked — a clinic needs to be able to sign out a lost phone.
+model Session {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  userAgent  String?
+  ipAddress  String?
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Doctors
+// ---------------------------------------------------------------------------
+
+/// The clinical profile behind a DOCTOR user. Split from User because a doctor
+/// has scheduling facts (availability, a diary) that a front-desk account never
+/// has, and because appointments should reference the clinician, not the login.
+model Doctor {
+  id        String  @id @default(cuid())
+  userId    String  @unique
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialty String
+  active    Boolean @default(true)
+
+  appointments Appointment[]
+  availability DoctorAvailability[]
+  exceptions   AvailabilityException[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// The hours a doctor normally works, repeating weekly. A day the doctor does
+/// not work simply has no rows — absence means closed, so there is no
+/// "isAvailable: false" state to keep consistent. The API re-adds that flag to
+/// match the frontend's DoctorAvailability shape.
+model DoctorAvailability {
+  id        String @id @default(cuid())
+  doctorId  String
+  doctor    Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  /// 0 = Sunday … 6 = Saturday.
+  dayOfWeek Int
+  /// "HH:mm" local clinic time. Deliberately not a DateTime: this is a weekly
+  /// pattern, not an instant, and 09:00 means 09:00 every week.
+  startTime String
+  endTime   String
+
+  @@index([doctorId, dayOfWeek])
+}
+
+/// A specific calendar date that overrides the weekly pattern. Closing a
+/// Thursday in DoctorAvailability would close every Thursday; this is how the
+/// clinic says "away on the 21st" or "clinic opens late that morning".
+model AvailabilityException {
+  id       String   @id @default(cuid())
+  doctorId String
+  doctor   Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  date     DateTime @db.Date
+
+  /// True = no hours at all that day. False = the times below replace the
+  /// weekly pattern for that date.
+  isClosed  Boolean @default(true)
+  startTime String?
+  endTime   String?
+  reason    String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([doctorId, date, startTime])
+  @@index([doctorId, date])
+}
+
+// ---------------------------------------------------------------------------
+// Patients
+// ---------------------------------------------------------------------------
+
 model Patient {
-  id               String        @id @default(cuid())
-  name             String
+  id               String    @id @default(cuid())
+  fullName         String
   phone            String
-  whatsapp         String?
+  whatsappNumber   String?
   email            String?
-  dateOfBirth      DateTime?
-  preferredChannel Channel       @default(WHATSAPP)
+  dateOfBirth      DateTime? @db.Date
+  preferredChannel Channel   @default(WHATSAPP)
   notes            String?
-  createdAt        DateTime      @default(now())
-  appointments     Appointment[]
+
+  /// When the clinic first registered them — NOT the same as createdAt. A
+  /// record migrated from the paper diary was created today but registered
+  /// years ago, and the recall clock anchors on this.
+  registeredAt DateTime @default(now())
+
+  appointments Appointment[]
+  messages     Message[]
+  requests     PatientRequest[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fullName])
+  @@index([phone])
 }
 
 enum Channel {
@@ -46,18 +208,59 @@ enum Channel {
   EMAIL
 }
 
-// ---------- Appointments ----------
+// ---------------------------------------------------------------------------
+// Appointments
+// ---------------------------------------------------------------------------
+
+/// The clinic's service list, as data. Front desk can add, rename, reorder or
+/// retire a type, and change how long it takes, without a deploy — which is
+/// the whole reason this is not an enum.
+model AppointmentType {
+  id   String @id @default(cuid())
+  name String @unique
+
+  /// Default length for a RETURNING patient. A first visit overrides this with
+  /// ClinicSettings.firstVisitMinutes regardless of type, because the type
+  /// names the service, not whether the clinic has met this person.
+  durationMinutes Int @default(30)
+
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+
+  appointments Appointment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Appointment {
-  id          String            @id @default(cuid())
-  patient     Patient           @relation(fields: [patientId], references: [id])
-  patientId   String
-  doctor      User?             @relation("DoctorAppointments", fields: [doctorId], references: [id])
-  doctorId    String?
-  scheduledAt DateTime
-  type        String
-  status      AppointmentStatus @default(BOOKED)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  id        String          @id @default(cuid())
+  patientId String
+  patient   Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctorId  String
+  doctor    Doctor          @relation(fields: [doctorId], references: [id])
+  typeId    String
+  type      AppointmentType @relation(fields: [typeId], references: [id])
+
+  /// UTC instant the appointment starts.
+  startsAt        DateTime
+  durationMinutes Int
+
+  status AppointmentStatus @default(BOOKED)
+  notes  String?
+
+  messages     Message[]
+  requests     PatientRequest[]
+  portalTokens PortalAccessToken[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Day and week views, and the booking form's conflict check.
+  @@index([doctorId, startsAt])
+  /// The recall join: "last ATTENDED visit per patient", and "any activity".
+  @@index([patientId, status, startsAt])
+  @@index([startsAt])
 }
 
 enum AppointmentStatus {
@@ -66,5 +269,203 @@ enum AppointmentStatus {
   ATTENDED
   MISSED
   RESCHEDULED
+  /// Called off in advance. Distinct from MISSED so the attendance rate and
+  /// the follow-up worklist stay meaningful.
   CANCELLED
+}
+
+// ---------------------------------------------------------------------------
+// Messaging
+// ---------------------------------------------------------------------------
+
+model Message {
+  id            String       @id @default(cuid())
+  patientId     String
+  patient       Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointmentId String?
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  channel Channel
+  type    MessageType
+
+  /// The text that actually went out, rendered at send time — not a pointer to
+  /// a template. Editing a template must never rewrite history.
+  body            String
+  emailSubject    String?
+  /// Which template version produced it, for auditing wording changes.
+  templateVersion Int?
+
+  deliveryStatus    DeliveryStatus @default(SENT)
+  /// The provider's own ID, so an inbound delivery webhook can find this row.
+  providerMessageId String?        @unique
+  providerError     String?
+  sentAt            DateTime       @default(now())
+  deliveredAt       DateTime?
+
+  /// Recall cooldown reads (patientId, type, sentAt); the log reads sentAt.
+  @@index([patientId, type, sentAt])
+  @@index([sentAt])
+  @@index([deliveryStatus])
+}
+
+enum MessageType {
+  CONFIRMATION
+  REMINDER
+  FOLLOW_UP
+  /// Six-month outreach. Not tied to an appointment — it is about a silence.
+  RECALL
+  BIRTHDAY
+}
+
+enum DeliveryStatus {
+  /// Accepted by the provider. Nobody has confirmed the patient received it.
+  SENT
+  /// The provider confirmed it reached the device.
+  DELIVERED
+  FAILED
+}
+
+/// The wording the clinic owns, one per message type.
+model MessageTemplate {
+  id           String      @id @default(cuid())
+  type         MessageType @unique
+  description  String
+  body         String
+  emailSubject String
+
+  version       Int      @default(1)
+  updatedByName String
+  updatedAt     DateTime @updatedAt
+
+  revisions TemplateRevision[]
+}
+
+/// Previous wording, so the clinic can see what a message used to say, who
+/// changed it, and roll back.
+model TemplateRevision {
+  id         String          @id @default(cuid())
+  templateId String
+  template   MessageTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  version      Int
+  body         String
+  emailSubject String
+  savedAt      DateTime
+  savedByName  String
+
+  @@unique([templateId, version])
+}
+
+// ---------------------------------------------------------------------------
+// Patient-initiated requests
+// ---------------------------------------------------------------------------
+
+/// Submitted from the patient portal. Never touches the appointment directly —
+/// staff stay in control of the calendar; confirming is what cascades.
+model PatientRequest {
+  id            String      @id @default(cuid())
+  appointmentId String
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  patientId     String
+  patient       Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  requestType       RequestType
+  /// Patient's preferred new slot, for a reschedule.
+  requestedStartsAt DateTime?
+  reason            String?
+
+  status        RequestStatus @default(PENDING)
+  respondedAt   DateTime?
+  respondedById String?
+  respondedBy   User?         @relation("RequestResponder", fields: [respondedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([status, createdAt])
+}
+
+enum RequestType {
+  RESCHEDULE
+  CANCELLATION
+}
+
+enum RequestStatus {
+  PENDING
+  CONFIRMED
+  DECLINED
+}
+
+// ---------------------------------------------------------------------------
+// Patient portal access
+// ---------------------------------------------------------------------------
+
+/// Replaces the prototype's bare `/portal/appointment/:id`, which handed out a
+/// real patient's name, phone and appointment to anyone holding the URL.
+///
+/// The token is the only credential a patient ever has, so it is stored hashed,
+/// expires, and can be revoked. One appointment may have several over time —
+/// resending a reminder issues a fresh one rather than reusing the old link.
+model PortalAccessToken {
+  id            String      @id @default(cuid())
+  tokenHash     String      @unique
+  appointmentId String
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([appointmentId])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Clinic configuration
+// ---------------------------------------------------------------------------
+
+/// Single row. These were hard-coded constants in the prototype; every one of
+/// them is a number the clinic questioned at least once, so they live in the
+/// database where answering the question is an edit rather than a deploy.
+model ClinicSettings {
+  id String @id @default("clinic")
+
+  /// A patient with no completed visit gets this, whatever the type.
+  firstVisitMinutes Int @default(40)
+
+  /// Calendar grid granularity and the clinic day.
+  slotMinutes Int    @default(30)
+  dayStart    String @default("08:00")
+  dayEnd      String @default("17:00")
+
+  /// Recall thresholds (see the recall rules in client/src/lib/visits.ts).
+  recallMonths       Int @default(6)
+  lapsingMonths      Int @default(5)
+  recallCooldownDays Int @default(30)
+
+  /// How long a patient portal link stays valid.
+  portalTokenDays Int @default(30)
+
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Audit
+// ---------------------------------------------------------------------------
+
+/// Who did what. Cheap to add now, painful to backfill later — and this is
+/// patient data, so "who changed this appointment" is a question that will be
+/// asked eventually.
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  actor       User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  action      String
+  entity      String
+  entityId    String
+  meta        Json?
+  createdAt   DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
 }
