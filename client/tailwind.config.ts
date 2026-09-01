@@ -40,6 +40,8 @@ const config: Config = {
           800: "#2b375a",
           900: "#202946",
           950: "#131a2f",
+          accent: "#1c559e",
+          bg: "#fafaff",
         },
         "clinic-red": {
           50: "#fef1f1",

@@ -3,8 +3,10 @@ import {
   LayoutDashboard,
   Users,
   CalendarDays,
-  MessageSquare,
-  Inbox,
+  Activity, // For Actions
+  FileText, // For Templates
+  BarChart, // For Reports
+  Settings, // For Settings
   CalendarCheck,
   Clock,
   type LucideIcon,
@@ -20,10 +22,12 @@ export interface NavItem {
 export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   "front-desk": [
     { label: "Dashboard", href: "/", icon: LayoutDashboard },
-    { label: "Patients", href: "/patients", icon: Users },
     { label: "Appointments", href: "/appointments", icon: CalendarDays },
-    { label: "Message Log", href: "/messages", icon: MessageSquare },
-    { label: "Pending Requests", href: "/requests", icon: Inbox },
+    { label: "Patients", href: "/patients", icon: Users },
+    { label: "Actions", href: "/actions", icon: Activity },
+    { label: "Templates", href: "/templates", icon: FileText },
+    { label: "Reports", href: "/reports", icon: BarChart },
+    { label: "Settings", href: "/settings", icon: Settings },
   ],
   doctor: [
     { label: "Dashboard", href: "/doctor", icon: LayoutDashboard },

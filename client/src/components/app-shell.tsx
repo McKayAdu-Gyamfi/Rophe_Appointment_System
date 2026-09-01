@@ -44,11 +44,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <TopNav />
-      <div className="mx-auto flex max-w-7xl">
-        <Sidebar />
-        <main className="min-w-0 flex-1 pb-20 md:pb-0">{children}</main>
+    <div className="flex h-[100dvh] w-full bg-brand-bg overflow-hidden">
+      <Sidebar />
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <TopNav />
+        <main className="flex-1 overflow-y-auto pb-20 md:pb-0">{children}</main>
       </div>
       <MobileNav />
     </div>

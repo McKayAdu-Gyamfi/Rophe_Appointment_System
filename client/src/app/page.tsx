@@ -1,518 +1,334 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import {
-  CalendarDays,
-  CheckCircle2,
-  Clock,
-  Loader2,
-  Send,
-  TrendingUp,
-  UserRound,
-  XCircle,
+  Users,
+  CalendarX2,
+  FileText,
+  BriefcaseMedical,
+  TriangleAlert,
   ArrowRight,
-  Phone,
 } from "lucide-react";
-import { getAppointments, getMessages, getPatients, sendMessage } from "@/lib/api";
-import type { Appointment, Message, Patient } from "@/lib/types";
-import { APPOINTMENT_STATUS_STYLES, CHANNEL_STYLES } from "@/lib/status-styles";
-import { dateKey, fmtDate, fmtTime, startOfWeek, endOfWeek } from "@/lib/format";
-import { AppointmentDetailDialog } from "@/components/appointment-detail-dialog";
 import { useRole } from "@/lib/role-context";
 import { cn } from "@/lib/utils";
-
-// --- component -------------------------------------------------------------
 
 export default function DashboardPage() {
   const router = useRouter();
   const { role } = useRole();
-  const canAct = role === "front-desk";
 
-  // "/" is the front-desk dashboard. A doctor arriving here directly (typed
-  // URL, bookmark, restored role from localStorage) belongs on their own.
+  const [now, setNow] = useState<Date | null>(null);
+
   useEffect(() => {
     if (role === "doctor") router.replace("/doctor");
+    
+    setNow(new Date());
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
   }, [role, router]);
 
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<Appointment | null>(null);
-  const [sendingId, setSendingId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      const [appts, pts, msgs] = await Promise.all([
-        getAppointments(),
-        getPatients(),
-        getMessages(),
-      ]);
-      if (!active) return;
-      setAppointments(appts);
-      setPatients(pts);
-      setMessages(msgs);
-      setLoading(false);
-    })();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const patientMap = useMemo(() => {
-    const m = new Map<string, Patient>();
-    patients.forEach((p) => m.set(p.id, p));
-    return m;
-  }, [patients]);
-
-  const patientName = useCallback(
-    (id: string) => patientMap.get(id)?.fullName ?? "Unknown patient",
-    [patientMap],
-  );
-
-  // Dates compare as "YYYY-MM-DD" strings — same convention as the calendar,
-  // and immune to the UTC-shift that trips up Date arithmetic.
-  const todayKey = useMemo(() => dateKey(new Date()), []);
-  const weekStartKey = useMemo(() => dateKey(startOfWeek(new Date())), []);
-  const weekEndKey = useMemo(() => dateKey(endOfWeek(new Date())), []);
-
-  const todays = useMemo(
-    () =>
-      appointments
-        .filter((a) => a.date === todayKey)
-        .sort((a, b) => a.time.localeCompare(b.time)),
-    [appointments, todayKey],
-  );
-
-  const upcomingThisWeek = useMemo(
-    () =>
-      appointments
-        .filter((a) => a.date > todayKey && a.date <= weekEndKey)
-        .filter((a) => a.status === "booked" || a.status === "confirmed")
-        .sort((a, b) =>
-          a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date),
-        ),
-    [appointments, todayKey, weekEndKey],
-  );
-
-  const missedVisits = useMemo(
-    () =>
-      appointments
-        .filter((a) => a.status === "missed")
-        .sort((a, b) => b.date.localeCompare(a.date)),
-    [appointments],
-  );
-
-  // Attendance rate: attended / (attended + missed) this week.
-  const attendanceRate = useMemo(() => {
-    const inWeek = appointments.filter((a) => a.date >= weekStartKey && a.date <= weekEndKey);
-    const attended = inWeek.filter((a) => a.status === "attended").length;
-    const missed = inWeek.filter((a) => a.status === "missed").length;
-    const denom = attended + missed;
-    return denom === 0 ? 0 : Math.round((attended / denom) * 100);
-  }, [appointments, weekStartKey, weekEndKey]);
-
-  const bookedToday = useMemo(
-    () => appointments.filter((a) => a.date === todayKey && a.status === "booked").length,
-    [appointments, todayKey],
-  );
-
-  // A missed visit counts as handled once a follow-up message exists for it —
-  // that's what keeps this an action list rather than a copy of the one above.
-  const followedUpIds = useMemo(() => {
-    const ids = new Set<string>();
-    messages.forEach((m) => {
-      if (m.type === "follow-up" && m.appointmentId) ids.add(m.appointmentId);
-    });
-    return ids;
-  }, [messages]);
-
-  const pendingFollowUps = useMemo(
-    () => missedVisits.filter((a) => !followedUpIds.has(a.id)),
-    [missedVisits, followedUpIds],
-  );
-
-  const handleStatusChanged = useCallback((updated: Appointment) => {
-    setAppointments((prev) => prev.map((a) => (a.id === updated.id ? { ...updated } : a)));
-    setSelected({ ...updated });
-  }, []);
-
-  const sendFollowUp = useCallback(
-    async (appointment: Appointment) => {
-      const patient = patientMap.get(appointment.patientId);
-      if (!patient) return;
-
-      setSendingId(appointment.id);
-      try {
-        const preview = `We missed you on ${fmtDate(appointment.date)}. Please call the clinic to rebook your ${appointment.appointmentType.toLowerCase()}.`;
-        const message = await sendMessage({
-          patientId: patient.id,
-          appointmentId: appointment.id,
-          channel: patient.preferredChannel,
-          type: "follow-up",
-          contentPreview: preview,
-        });
-        setMessages((prev) => [message, ...prev]);
-        toast.success(
-          `Follow-up sent via ${CHANNEL_STYLES[patient.preferredChannel].label}`,
-          { description: `${patient.fullName} — ${preview}` },
-        );
-      } catch {
-        toast.error("Couldn't send that follow-up. Try again.");
-      } finally {
-        setSendingId(null);
-      }
-    },
-    [patientMap],
-  );
-
-  if (loading) {
-    return (
-      <div className="px-4 py-10 sm:px-6 lg:px-8">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 w-64 rounded-lg bg-slate-200" />
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="h-28 rounded-xl bg-slate-200" />
-            ))}
-          </div>
-          <div className="h-64 rounded-xl bg-slate-200" />
-        </div>
-      </div>
-    );
-  }
+  const dateStr = now?.toLocaleDateString("en-US", { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+  const timeStr = now?.toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit' });
 
   return (
-    <div className="px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
-        {/* Header */}
-        <div className="mb-6 flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold text-slate-900">Front-desk Dashboard</h1>
-          <p className="text-sm text-slate-500">
-            {new Date().toLocaleDateString("en-GB", {
-              weekday: "long",
-              day: "numeric",
-              month: "long",
-              year: "numeric",
-            })}
-          </p>
-        </div>
-
-        {/* Quick stats */}
-        <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <StatCard
-            label="Attendance rate (this week)"
-            value={`${attendanceRate}%`}
-            icon={<TrendingUp className="h-5 w-5" />}
-            accent="teal"
-          />
-          <StatCard
-            label="Booked today"
-            value={String(bookedToday)}
-            icon={<CalendarDays className="h-5 w-5" />}
-            accent="amber"
-          />
-          <StatCard
-            label="Today's appointments"
-            value={String(todays.length)}
-            icon={<Clock className="h-5 w-5" />}
-            accent="sky"
-          />
-          <StatCard
-            label="Missed visits"
-            value={String(missedVisits.length)}
-            icon={<XCircle className="h-5 w-5" />}
-            accent="rose"
-          />
-        </div>
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {/* Today's appointments */}
-          <Section
-            title="Today's appointments"
-            count={todays.length}
-            actionHref="/appointments"
-            actionLabel="View all"
-          >
-            {todays.length === 0 ? (
-              <Empty text="No appointments scheduled today." />
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {todays.map((a) => (
-                  <li key={a.id}>
-                    <AppointmentRow
-                      appt={a}
-                      patientName={patientName(a.patientId)}
-                      onSelect={() => setSelected(a)}
-                    />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-
-          {/* Upcoming this week */}
-          <Section
-            title="Upcoming this week"
-            count={upcomingThisWeek.length}
-            actionHref="/appointments"
-            actionLabel="View calendar"
-          >
-            {upcomingThisWeek.length === 0 ? (
-              <Empty text="No upcoming appointments this week." />
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {upcomingThisWeek.slice(0, 6).map((a) => (
-                  <li key={a.id}>
-                    <AppointmentRow
-                      appt={a}
-                      patientName={patientName(a.patientId)}
-                      showDate
-                      onSelect={() => setSelected(a)}
-                    />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-
-          {/* Missed visits */}
-          <Section
-            title="Missed visits"
-            count={missedVisits.length}
-            actionHref="/appointments"
-            actionLabel="View all"
-          >
-            {missedVisits.length === 0 ? (
-              <Empty text="No missed visits. Great!" />
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {missedVisits.slice(0, 5).map((a) => (
-                  <li key={a.id}>
-                    <AppointmentRow
-                      appt={a}
-                      patientName={patientName(a.patientId)}
-                      showDate
-                      onSelect={() => setSelected(a)}
-                      tag={followedUpIds.has(a.id) ? "Followed up" : undefined}
-                    />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-
-          {/* Pending follow-ups action list */}
-          <Section
-            title="Pending follow-ups"
-            count={pendingFollowUps.length}
-            actionHref="/messages"
-            actionLabel="Message log"
-          >
-            {pendingFollowUps.length === 0 ? (
-              <Empty
-                text={
-                  missedVisits.length === 0
-                    ? "Nothing to follow up on."
-                    : "Every missed visit has been followed up."
-                }
-              />
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {pendingFollowUps.map((a) => {
-                  const p = patientMap.get(a.patientId);
-                  const sending = sendingId === a.id;
-                  return (
-                    <li key={a.id} className="flex items-center gap-3 px-4 py-3">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-50">
-                        <UserRound className="h-4 w-4 text-rose-500" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <Link
-                          href={`/patients/${p?.id ?? a.patientId}`}
-                          className="truncate text-sm font-medium text-slate-900 transition hover:text-teal-700"
-                        >
-                          {patientName(a.patientId)}
-                        </Link>
-                        <p className="truncate text-xs text-slate-500">
-                          Missed {fmtDate(a.date)} · {a.appointmentType}
-                          {p && ` · ${CHANNEL_STYLES[p.preferredChannel].label}`}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {p?.phone && (
-                          <span className="hidden items-center gap-1 text-xs text-slate-400 lg:inline-flex">
-                            <Phone className="h-3 w-3" />
-                            {p.phone}
-                          </span>
-                        )}
-                        {canAct && (
-                          <button
-                            type="button"
-                            onClick={() => void sendFollowUp(a)}
-                            disabled={sending}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-teal-50 px-2.5 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {sending ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <Send className="h-3 w-3" />
-                            )}
-                            Send follow-up
-                          </button>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Section>
-        </div>
+    <div className="flex h-full flex-col px-8 pt-5 pb-6 overflow-hidden bg-brand-bg">
+      <div className="shrink-0 mb-6">
+        <h1 className="text-2xl font-bold text-slate-900">Staff Dashboard</h1>
+        <p className="text-sm text-slate-500 mt-1 font-bold">
+          {now ? `${dateStr} ${timeStr}` : "\u00A0"}
+        </p>
       </div>
 
-      <AppointmentDetailDialog
-        appointment={selected}
-        patient={selected ? patientMap.get(selected.patientId) : undefined}
-        onClose={() => setSelected(null)}
-        onChanged={handleStatusChanged}
-      />
+      <div className="grid grid-cols-4 gap-4 mb-8 shrink-0">
+        <StatCard
+          label="TOTAL PATIENTS TODAY"
+          value="142"
+          badge="+12%"
+          badgeColor="bg-blue-100 text-blue-700"
+          icon={<Users className="h-5 w-5 text-brand-accent" />}
+          iconBg="bg-blue-50"
+        />
+        <StatCard
+          label="MISSED APPOINTMENTS"
+          value="3"
+          suffix=" / 12"
+          icon={<CalendarX2 className="h-5 w-5 text-red-500" />}
+          iconBg="bg-red-50"
+        />
+        <StatCard
+          label="PENDING REPORTS"
+          value="24"
+          icon={<FileText className="h-5 w-5 text-brand-accent" />}
+          iconBg="bg-blue-50"
+        />
+        <StatCard
+          label="TODAY'S APPOINTMENTS"
+          value="12"
+          icon={<BriefcaseMedical className="h-5 w-5 text-brand-accent" />}
+          iconBg="bg-blue-50"
+        />
+      </div>
+
+      <div className="flex flex-1 gap-6 min-h-0">
+        {/* Left Column: Needs Action */}
+        <div className="flex w-[400px] flex-col overflow-hidden gap-4">
+          <div className="flex items-center justify-between shrink-0">
+            <h2 className="text-lg font-semibold text-slate-800">Needs Action</h2>
+            <button className="text-sm font-semibold text-brand-accent hover:underline">
+              View All
+            </button>
+          </div>
+
+          <div className="flex flex-1 flex-col overflow-hidden gap-4">
+            <div className="flex flex-1 flex-col rounded-2xl bg-white shadow-sm border border-slate-100 p-4">
+              <div className="flex items-start gap-3 mb-4 pb-4 border-b border-slate-100 shrink-0">
+                <TriangleAlert className="h-5 w-5 text-red-500 mt-0.5" />
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">Missed Visits</h3>
+                  <p className="text-xs text-slate-500">
+                    Patients requiring immediate follow-up.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-1 flex-col gap-4 overflow-y-auto">
+                <MissedVisit
+                  initials="JA"
+                  name="James Arthur"
+                  details="Cardiology Follow-up • 09:00 AM"
+                />
+                <MissedVisit
+                  initials="SM"
+                  name="Sarah Mensah"
+                  details="General Checkup • 10:30 AM"
+                />
+                <MissedVisit
+                  initials="KO"
+                  name="Kwame Osei"
+                  details="Neurology Consult • 11:15 AM"
+                />
+              </div>
+            </div>
+
+            <div className="relative shrink-0 overflow-hidden rounded-2xl bg-[#004282] p-5 flex flex-col justify-end">
+              <h3 className="text-lg font-bold text-white mb-1">Weekly Briefing</h3>
+              <p className="text-xs text-slate-300 mb-3">
+                Review updated protocols for patient intake.
+              </p>
+              <button className="self-start flex items-center gap-2 rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-slate-900 transition hover:bg-slate-100">
+                Read Brief
+                <ArrowRight className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: Today's Schedule */}
+        <div className="flex flex-1 flex-col overflow-hidden gap-4">
+          <div className="flex items-center justify-between shrink-0">
+            <h2 className="text-lg font-semibold text-slate-800">Today&apos;s Schedule</h2>
+            <div className="flex rounded-lg bg-slate-100 p-1">
+              <button className="rounded-md bg-white px-3 py-1 text-xs font-semibold text-slate-800 shadow-sm">
+                Timeline
+              </button>
+              <button className="rounded-md px-3 py-1 text-xs font-semibold text-slate-500 hover:text-slate-800">
+                List
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto rounded-2xl bg-white shadow-sm border border-slate-100 p-6 relative">
+            <div className="flex flex-col gap-6 relative z-10 min-h-full">
+              <div className="absolute top-2 bottom-[-24px] left-[64px] w-px bg-slate-200 -z-10" />
+              <ScheduleItem
+                time="13:00"
+                duration="45m"
+                title="Initial Consultation"
+                status="In Progress"
+                statusBg="bg-blue-100 text-blue-700"
+                doctor="Dr. Mensah"
+                room="Room 2A"
+                patientInitials="ED"
+                patientName="Emmanuel Darko"
+                initialsBg="bg-red-100 text-red-600"
+                active
+              />
+              <ScheduleItem
+                time="14:00"
+                duration="30m"
+                title="Follow-up Assessment"
+                status="Upcoming"
+                statusBg="bg-slate-100 text-slate-600"
+                doctor="Nurse Boateng"
+                room="Room 4B"
+                patientInitials="AA"
+                patientName="Abigail Appiah"
+                initialsBg="bg-blue-100 text-blue-600"
+              />
+              <ScheduleItem
+                time="15:30"
+                duration="60m"
+                title="Specialist Review"
+                status="Upcoming"
+                statusBg="bg-slate-100 text-slate-600"
+                doctor="Dr. Mensah"
+                room="Room 1C"
+                patientInitials="FK"
+                patientName="Felix Kumi"
+                initialsBg="bg-blue-100 text-blue-600"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
-
-// --- sub-components -------------------------------------------------------
-
-const ACCENTS: Record<string, { bg: string; text: string; ring: string }> = {
-  teal: { bg: "bg-teal-50", text: "text-teal-600", ring: "ring-teal-100" },
-  amber: { bg: "bg-amber-50", text: "text-amber-600", ring: "ring-amber-100" },
-  sky: { bg: "bg-sky-50", text: "text-sky-600", ring: "ring-sky-100" },
-  rose: { bg: "bg-rose-50", text: "text-rose-600", ring: "ring-rose-100" },
-};
 
 function StatCard({
   label,
   value,
+  badge,
+  badgeColor,
   icon,
-  accent,
+  iconBg,
+  suffix,
 }: {
   label: string;
   value: string;
+  badge?: string;
+  badgeColor?: string;
   icon: React.ReactNode;
-  accent: keyof typeof ACCENTS;
+  iconBg: string;
+  suffix?: string;
 }) {
-  const a = ACCENTS[accent];
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between">
-        <span
-          className={cn(
-            "flex h-10 w-10 items-center justify-center rounded-lg ring-4",
-            a.bg,
-            a.text,
-            a.ring,
-          )}
-        >
-          {icon}
-        </span>
+    <div className="relative overflow-hidden rounded-2xl bg-white p-5 shadow-sm border border-slate-100 flex flex-col justify-between h-32">
+      <div className="flex justify-between items-start z-10 relative">
+        <p className="text-[10px] font-bold text-slate-500 tracking-wider max-w-[60%]">
+          {label}
+        </p>
       </div>
-      <p className="mt-3 text-2xl font-semibold text-slate-900">{value}</p>
-      <p className="mt-0.5 text-xs font-medium text-slate-500">{label}</p>
+      <div className="flex items-end gap-3 z-10 relative mt-4">
+        <div className="flex items-baseline">
+          <span className="text-3xl font-bold text-slate-900 leading-none">{value}</span>
+          {suffix && (
+            <span className="text-sm font-semibold text-slate-400 ml-1 mb-0.5">
+              {suffix}
+            </span>
+          )}
+        </div>
+        {badge && (
+          <span
+            className={cn(
+              "px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide mb-1",
+              badgeColor
+            )}
+          >
+            {badge}
+          </span>
+        )}
+      </div>
+
+      {/* Circle Icon decoration */}
+      <div
+        className={cn(
+          "absolute right-0 top-0 h-16 w-20 rounded-bl-[2.5rem] flex items-center justify-center pl-2 pb-2",
+          iconBg
+        )}
+      >
+        {icon}
+      </div>
     </div>
   );
 }
 
-function Section({
-  title,
-  count,
-  actionHref,
-  actionLabel,
-  children,
+function MissedVisit({
+  initials,
+  name,
+  details,
 }: {
-  title: string;
-  count: number;
-  actionHref: string;
-  actionLabel: string;
-  children: React.ReactNode;
+  initials: string;
+  name: string;
+  details: string;
 }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-            {count}
-          </span>
-        </div>
-        <Link
-          href={actionHref}
-          className="inline-flex items-center gap-1 text-xs font-semibold text-teal-600 transition hover:text-teal-700"
-        >
-          {actionLabel}
-          <ArrowRight className="h-3 w-3" />
-        </Link>
+    <div className="flex items-center gap-4">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600">
+        {initials}
       </div>
-      {children}
-    </section>
+      <div>
+        <p className="text-sm font-bold text-slate-800">{name}</p>
+        <p className="text-xs text-slate-500">{details}</p>
+      </div>
+    </div>
   );
 }
 
-function AppointmentRow({
-  appt,
+function ScheduleItem({
+  time,
+  duration,
+  title,
+  status,
+  statusBg,
+  doctor,
+  room,
+  patientInitials,
   patientName,
-  showDate,
-  onSelect,
-  tag,
+  initialsBg,
+  active = false,
 }: {
-  appt: Appointment;
+  time: string;
+  duration: string;
+  title: string;
+  status: string;
+  statusBg: string;
+  doctor: string;
+  room: string;
+  patientInitials: string;
   patientName: string;
-  showDate?: boolean;
-  /** Opens the status dialog — how staff mark an appointment missed from here. */
-  onSelect: () => void;
-  tag?: string;
+  initialsBg: string;
+  active?: boolean;
 }) {
-  const style = APPOINTMENT_STATUS_STYLES[appt.status];
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50"
-    >
-      <div className="flex w-16 shrink-0 flex-col">
-        <span className="text-sm font-semibold text-slate-900">{fmtTime(appt.time)}</span>
-        {showDate && (
-          <span className="text-[11px] text-slate-400">{fmtDate(appt.date)}</span>
-        )}
+    <div className="flex items-start gap-4">
+      <div className="flex w-14 shrink-0 flex-col items-end pt-1 relative">
+        <span className="text-sm font-bold text-slate-800">{time}</span>
+        <span className="text-[10px] font-bold text-slate-400">{duration}</span>
+        <div
+          className={cn(
+            "absolute top-1.5 -right-[13px] h-2.5 w-2.5 rounded-full ring-4 ring-white z-20",
+            active ? "bg-brand-accent" : "bg-slate-300"
+          )}
+        />
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-slate-900">{patientName}</p>
-        <p className="truncate text-xs text-slate-500">
-          {appt.appointmentType}
-          {tag && <span className="text-teal-600"> · {tag}</span>}
-        </p>
-      </div>
-      <span
+
+      <div
         className={cn(
-          "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
-          style.badge,
+          "flex-1 rounded-2xl p-5 shadow-sm",
+          active ? "bg-white border-2 border-brand-accent shadow-brand-accent/20" : "bg-slate-50 border border-slate-100"
         )}
       >
-        <span className={cn("h-1.5 w-1.5 rounded-full", style.dot)} />
-        {style.label}
-      </span>
-    </button>
-  );
-}
-
-function Empty({ text }: { text: string }) {
-  return (
-    <div className="flex items-center gap-2 px-4 py-10 text-sm text-slate-400">
-      <CheckCircle2 className="h-4 w-4 text-teal-400" />
-      {text}
+        <div className="flex justify-between items-start mb-6">
+          <div>
+            <h3 className="text-base font-bold text-slate-900">{title}</h3>
+            <p className="text-xs font-medium text-slate-500 mt-0.5">
+              {doctor} • {room}
+            </p>
+          </div>
+          <span className={cn("px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide", statusBg)}>
+            {status}
+          </span>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold", initialsBg)}>
+            {patientInitials}
+          </div>
+          <span className="text-sm font-semibold text-slate-700">{patientName}</span>
+        </div>
+      </div>
     </div>
   );
 }

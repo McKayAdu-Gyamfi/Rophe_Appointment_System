@@ -6,6 +6,9 @@ import { useRole } from "@/lib/role-context";
 import { NAV_BY_ROLE } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
+import Image from "next/image";
+import { CLINIC } from "@/lib/clinic";
+
 export function Sidebar() {
   const { role } = useRole();
   const pathname = usePathname();
@@ -14,8 +17,18 @@ export function Sidebar() {
   if (items.length === 0) return null;
 
   return (
-    <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-60 shrink-0 border-r border-slate-200 bg-white md:block">
-      <nav className="flex h-full flex-col gap-1 overflow-y-auto p-4">
+    <aside className="relative hidden h-full w-60 shrink-0 bg-brand-bg shadow-[4px_0_24px_rgba(0,0,0,0.03)] z-10 md:flex flex-col">
+      <div className="flex h-16 shrink-0 items-center px-6">
+        <Image
+          src={CLINIC.logo}
+          alt={CLINIC.name}
+          width={240}
+          height={240}
+          priority
+          className="h-30 w-auto object-contain"
+        />
+      </div>
+      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-4 py-4">
         {items.map((item) => {
           const active =
             item.href === "/"
@@ -29,14 +42,14 @@ export function Sidebar() {
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 active
-                  ? "bg-teal-50 text-teal-700"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+                  ? "bg-brand-accent text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
               )}
             >
               <Icon
                 className={cn(
                   "h-5 w-5 shrink-0",
-                  active ? "text-teal-600" : "text-slate-400",
+                  active ? "text-white" : "text-slate-400",
                 )}
               />
               {item.label}
