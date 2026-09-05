@@ -173,3 +173,26 @@ export interface StaffUser {
  * token — ever leaves the data layer.
  */
 export type StaffSession = Omit<StaffUser, "password" | "inviteToken">;
+
+export interface AppointmentTypeConfig {
+  id: string;
+  name: string;
+  durationMinutes: number;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface ClinicSettings {
+  id: string;
+  firstVisitMinutes: number;
+  slotMinutes: number;
+  dayStart: string;
+  dayEnd: string;
+  recallThresholdLapsed: number;
+  recallThresholdOverdue: number;
+}
+
+export interface ScheduleConfig {
+  clinicSettings: ClinicSettings;
+  appointmentTypes: AppointmentTypeConfig[];
+}

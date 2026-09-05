@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CalendarOff, CalendarPlus } from "lucide-react";
-import type { Appointment, DoctorAvailability } from "@/lib/types";
+import type { Appointment, DoctorAvailability, ScheduleConfig } from "@/lib/types";
 import { APPOINTMENT_STATUS_STYLES } from "@/lib/status-styles";
 import { dateKey, fmtDate, fmtTime } from "@/lib/format";
 import {
@@ -33,6 +33,7 @@ export const SCHEDULE_VIEWS: { value: ScheduleView; label: string }[] = [
 interface SharedProps {
   appointments: Appointment[];
   availability: DoctorAvailability[];
+  config: ScheduleConfig;
   patientName: (id: string) => string;
   onSelect: (appointment: Appointment) => void;
   /** Omit for a read-only calendar. */
@@ -45,13 +46,14 @@ export function DayView({
   date,
   appointments,
   availability,
+  config,
   patientName,
   onSelect,
   onBook,
 }: SharedProps & { date: Date }) {
   const slots = useMemo(
-    () => buildDaySlots(date, appointments, availability),
-    [date, appointments, availability],
+    () => buildDaySlots(date, appointments, availability, config),
+    [date, appointments, availability, config],
   );
   const window = availabilityLabel(date, availability);
 
@@ -194,21 +196,22 @@ export function WeekView({
   days,
   appointments,
   availability,
+  config,
   patientName,
   onSelect,
   onBook,
   onPickDay,
 }: SharedProps & { days: Date[]; onPickDay: (date: Date) => void }) {
-  const times = useMemo(() => daySlotTimes(), []);
+  const times = useMemo(() => daySlotTimes(config), [config]);
   const todayKey = dateKey(new Date());
 
   const byDay = useMemo(
     () =>
       days.map((day) => ({
         day,
-        slots: buildDaySlots(day, appointments, availability),
+        slots: buildDaySlots(day, appointments, availability, config),
       })),
-    [days, appointments, availability],
+    [days, appointments, availability, config],
   );
 
   return (

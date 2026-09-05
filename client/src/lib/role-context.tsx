@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { signIn as apiSignIn } from "@/lib/api";
+import { signIn as apiSignIn, signOut as apiSignOut, getMe } from "@/lib/api";
 import type { Role, StaffSession } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -28,35 +28,33 @@ interface AuthContextValue {
   role: Role;
   /** False until the stored session has been read — guards redirect flashes. */
   ready: boolean;
-  signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  signIn: (email: string, password: string) => Promise<{ ok: boolean; session?: StaffSession; error?: string }>;
   signOut: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-const STORAGE_KEY = "rophe.session";
-
-function readStoredSession(): StaffSession | null {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as StaffSession;
-    return parsed?.role === "front-desk" || parsed?.role === "doctor" ? parsed : null;
-  } catch {
-    return null;
-  }
-}
+// Session is fetched on mount using getMe()
 
 export function RoleProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<StaffSession | null>(null);
   const [ready, setReady] = useState(false);
 
-  // Reading localStorage during render would break SSR hydration, so the
-  // session starts empty and fills in after mount.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSession(readStoredSession());
-    setReady(true);
+    let active = true;
+    (async () => {
+      const result = await getMe();
+      if (!active) return;
+      if (result.ok) {
+        setSession(result.session);
+      } else {
+        setSession(null);
+      }
+      setReady(true);
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
@@ -64,21 +62,12 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     if (!result.ok) return { ok: false as const, error: result.error };
 
     setSession(result.session);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(result.session));
-    } catch {
-      // ignore — localStorage unavailable
-    }
-    return { ok: true as const };
+    return { ok: true as const, session: result.session };
   }, []);
 
-  const signOut = useCallback(() => {
+  const signOut = useCallback(async () => {
+    await apiSignOut();
     setSession(null);
-    try {
-      window.localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // ignore
-    }
   }, []);
 
   const value = useMemo<AuthContextValue>(

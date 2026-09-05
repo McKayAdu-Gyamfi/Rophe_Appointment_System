@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CalendarCheck, ChevronLeft, ChevronRight, Eye } from "lucide-react";
-import { getAppointments, getDoctorAvailability, getPatients } from "@/lib/api";
-import type { Appointment, DoctorAvailability, Patient } from "@/lib/types";
+import { getAppointments, getDoctorAvailability, getPatients, getAppointmentTypes, getClinicSettings } from "@/lib/api";
+import type { Appointment, DoctorAvailability, Patient, ScheduleConfig } from "@/lib/types";
 import { dateKey, fmtLongDate, startOfDay } from "@/lib/format";
 import { addDays, weekDays } from "@/lib/schedule";
 import { AppointmentDetailDialog } from "@/components/appointment-detail-dialog";
@@ -23,6 +23,7 @@ export default function DoctorSchedulePage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [availability, setAvailability] = useState<DoctorAvailability[]>([]);
+  const [config, setConfig] = useState<ScheduleConfig | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [view, setView] = useState<ScheduleView>("day");
@@ -32,16 +33,19 @@ export default function DoctorSchedulePage() {
   useEffect(() => {
     let active = true;
     (async () => {
-      const [appts, pts, avail] = await Promise.all([
+      const [appts, pts, avail, types, settings] = await Promise.all([
         getAppointments(),
         getPatients(),
         getDoctorAvailability(DOCTOR_ID),
+        getAppointmentTypes(),
+        getClinicSettings(),
       ]);
       if (!active) return;
       // Only this doctor's own appointments (PRD Section 3.2 #3).
       setAppointments(appts.filter((a) => a.doctorId === DOCTOR_ID));
       setPatients(pts);
       setAvailability(avail);
+      setConfig({ clinicSettings: settings, appointmentTypes: types.filter(t => t.isActive) });
       setLoading(false);
     })();
     return () => {
@@ -154,21 +158,23 @@ export default function DoctorSchedulePage() {
         </div>
 
         {/* No onBook — the doctor's view is read-only; front desk does the booking. */}
-        {view === "day" && (
+        {view === "day" && config && (
           <DayView
             date={cursor}
             appointments={appointments}
             availability={availability}
+            config={config}
             patientName={patientName}
             onSelect={setSelected}
           />
         )}
 
-        {view === "week" && (
+        {view === "week" && config && (
           <WeekView
             days={days}
             appointments={appointments}
             availability={availability}
+            config={config}
             patientName={patientName}
             onSelect={setSelected}
             onPickDay={(d) => {

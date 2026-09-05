@@ -12,8 +12,10 @@ import {
   getPatients,
   sendMessage,
   updateAppointment,
+  getAppointmentTypes,
+  getClinicSettings,
 } from "@/lib/api";
-import type { Appointment, Doctor, DoctorAvailability, Patient } from "@/lib/types";
+import type { Appointment, Doctor, DoctorAvailability, Patient, ScheduleConfig } from "@/lib/types";
 import { CHANNEL_STYLES } from "@/lib/status-styles";
 import { dateKey, fmtDate, fmtLongDate, fmtTime, initials } from "@/lib/format";
 import {
@@ -23,15 +25,13 @@ import {
   windowContaining,
 } from "@/lib/schedule";
 import {
-  APPOINTMENT_TYPES,
   DURATION_OPTIONS,
   defaultDurationFor,
   durationRationale,
   isRuleDuration,
+  slotSlack,
 } from "@/lib/appointment-types";
 import { isFirstVisit as hasNeverAttended } from "@/lib/visits";
-import { SLOT_MINUTES } from "@/lib/schedule";
-import { slotSlack } from "@/lib/appointment-types";
 import { NewPatientDialog } from "./new-patient-dialog";
 import { cn } from "@/lib/utils";
 
@@ -68,18 +68,19 @@ export function AppointmentForm({
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [availability, setAvailability] = useState<DoctorAvailability[]>([]);
   const [doctor, setDoctor] = useState<Doctor | undefined>();
+  const [config, setConfig] = useState<ScheduleConfig | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [patientId, setPatientId] = useState(appointment?.patientId ?? initialPatientId ?? "");
   const [query, setQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const [type, setType] = useState(appointment?.appointmentType ?? APPOINTMENT_TYPES[0]);
+  const [type, setType] = useState(appointment?.appointmentType ?? "");
   const [date, setDate] = useState(appointment?.date ?? initialDate ?? dateKey(new Date()));
   const [time, setTime] = useState(appointment?.time ?? initialTime ?? "");
-  const [duration, setDuration] = useState(
-    appointment?.durationMinutes ?? defaultDurationFor({ appointmentType: type, isFirstVisit: false }),
-  );
+  
+  // We initialize duration to 0 and let the useEffect correct it once config loads.
+  const [duration, setDuration] = useState(appointment?.durationMinutes ?? 0);
   /**
    * Set once staff pick a duration by hand. The rule then stops overwriting
    * them — a clinician who allowed an hour for a complicated case should not
@@ -94,17 +95,28 @@ export function AppointmentForm({
   useEffect(() => {
     let active = true;
     (async () => {
-      const [pts, appts, avail, docs] = await Promise.all([
+      const [pts, appts, avail, docs, types, settings] = await Promise.all([
         getPatients(),
         getAppointments(),
         getDoctorAvailability(),
         getDoctors(),
+        getAppointmentTypes(),
+        getClinicSettings(),
       ]);
       if (!active) return;
       setPatients(pts);
       setAppointments(appts);
       setAvailability(avail);
       setDoctor(docs[0]);
+      
+      const activeTypes = types.filter((t) => t.isActive).sort((a, b) => a.sortOrder - b.sortOrder);
+      const loadedConfig = { clinicSettings: settings, appointmentTypes: activeTypes };
+      setConfig(loadedConfig);
+      
+      if (!appointment) {
+        setType(activeTypes[0]?.name ?? "");
+      }
+      
       setLoading(false);
     })();
     return () => {
@@ -141,11 +153,11 @@ export function AppointmentForm({
   const lastRuleKey = useRef<string | null>(isReschedule ? ruleKey : null);
 
   useEffect(() => {
-    if (loading || durationTouched) return;
+    if (loading || durationTouched || !config) return;
     if (!patientId || lastRuleKey.current === ruleKey) return;
     lastRuleKey.current = ruleKey;
-    setDuration(defaultDurationFor(durationInput));
-  }, [loading, durationTouched, patientId, ruleKey, durationInput]);
+    setDuration(defaultDurationFor(durationInput, config));
+  }, [loading, durationTouched, patientId, ruleKey, durationInput, config]);
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -169,8 +181,8 @@ export function AppointmentForm({
   );
 
   const slots = useMemo(
-    () => buildDaySlots(selectedDate, otherAppointments, availability),
-    [selectedDate, otherAppointments, availability],
+    () => (config ? buildDaySlots(selectedDate, otherAppointments, availability, config) : []),
+    [selectedDate, otherAppointments, availability, config],
   );
 
   const openLabel = availabilityLabel(selectedDate, availability);
@@ -380,9 +392,9 @@ export function AppointmentForm({
               onChange={(e) => setType(e.target.value)}
               className="w-full rounded-lg bg-slate-100 px-3 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-teal-600"
             >
-              {APPOINTMENT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
+              {config!.appointmentTypes.map((t) => (
+                <option key={t.id} value={t.name}>
+                  {t.name}
                 </option>
               ))}
             </select>
@@ -412,11 +424,12 @@ export function AppointmentForm({
         <DurationNote
           patientName={selectedPatient?.fullName}
           duration={duration}
-          overridden={durationTouched && !isRuleDuration(duration, durationInput)}
-          rationale={durationRationale(durationInput)}
+          overridden={durationTouched && !isRuleDuration(duration, durationInput, config!)}
+          rationale={durationRationale(durationInput, config!)}
+          config={config!}
           onReset={() => {
             setDurationTouched(false);
-            setDuration(defaultDurationFor(durationInput));
+            setDuration(defaultDurationFor(durationInput, config!));
           }}
         />
       </Section>
@@ -602,25 +615,28 @@ function DurationNote({
   duration,
   overridden,
   rationale,
+  config,
   onReset,
 }: {
   patientName?: string;
   duration: number;
   overridden: boolean;
   rationale: string;
+  config: ScheduleConfig;
   onReset: () => void;
 }) {
   if (!patientName) {
     return (
       <p className="mt-3 text-xs text-slate-500">
-        Pick a patient and the length is set from the clinic&rsquo;s rule — 40 minutes for a
-        first visit, 15 for a follow-up.
+        Pick a patient and the length is set from the clinic&rsquo;s rule — {config.clinicSettings.firstVisitMinutes} minutes for a
+        first visit, {config.appointmentTypes.find(t => t.name === "Follow-up")?.durationMinutes ?? 15} for a follow-up.
       </p>
     );
   }
 
-  const slack = slotSlack(duration, SLOT_MINUTES);
-  const slots = Math.max(1, Math.ceil(duration / SLOT_MINUTES));
+  const { slotMinutes } = config.clinicSettings;
+  const slack = slotSlack(duration, slotMinutes);
+  const slots = Math.max(1, Math.ceil(duration / slotMinutes));
 
   return (
     <div

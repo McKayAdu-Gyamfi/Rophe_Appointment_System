@@ -178,3 +178,17 @@ and phone. `PortalAccessToken` replaces it: hashed, expiring, revocable.
 **Message bodies are stored rendered.** Editing a template must never rewrite
 what was already sent, which is why `Message.body` is text and not a template
 reference.
+
+---
+
+## Messaging Providers
+
+The system uses a `MessageProvider` interface to abstract sending notifications (WhatsApp, SMS, Email) and receiving delivery receipts.
+
+To add a real provider (like Twilio or the WhatsApp Business API):
+1. Implement the `MessageProvider` interface defined in `src/services/messageProvider/types.ts`.
+2. Add the initialization logic to `src/services/messageProvider/index.ts`.
+3. Select your provider using the `MESSAGE_PROVIDER` environment variable.
+
+The default provider is `noop`, which simply logs outbound messages to the console instead of sending them. This allows the system to run locally and end-to-end without signing any provider contracts.
+

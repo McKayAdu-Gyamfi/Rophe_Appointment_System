@@ -20,6 +20,8 @@ import {
   getPendingRequests,
   respondToRequest,
   sendMessage,
+  getAppointmentTypes,
+  getClinicSettings,
   type RequestDecision,
 } from "@/lib/api";
 import type {
@@ -27,6 +29,7 @@ import type {
   DoctorAvailability,
   Patient,
   PatientRequest,
+  ScheduleConfig,
 } from "@/lib/types";
 import {
   APPOINTMENT_STATUS_STYLES,
@@ -47,23 +50,27 @@ export default function PendingRequestsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [availability, setAvailability] = useState<DoctorAvailability[]>([]);
+  const [config, setConfig] = useState<ScheduleConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingId, setPendingId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const [reqs, appts, pts, avail] = await Promise.all([
+      const [reqs, appts, pts, avail, types, settings] = await Promise.all([
         getPendingRequests(),
         getAppointments(),
         getPatients(),
         getDoctorAvailability(),
+        getAppointmentTypes(),
+        getClinicSettings(),
       ]);
       if (!active) return;
       setRequests(reqs);
       setAppointments(appts);
       setPatients(pts);
       setAvailability(avail);
+      setConfig({ clinicSettings: settings, appointmentTypes: types.filter(t => t.isActive) });
       setLoading(false);
     })();
     return () => {
@@ -97,7 +104,8 @@ export default function PendingRequestsPage() {
 
       const date = new Date(`${request.requestedDate}T00:00:00`);
       const others = appointments.filter((a) => a.id !== request.appointmentId);
-      const slot = buildDaySlots(date, others, availability).find(
+      if (!config) return null;
+      const slot = buildDaySlots(date, others, availability, config).find(
         (s) => s.time === request.requestedTime,
       );
 
@@ -106,7 +114,7 @@ export default function PendingRequestsPage() {
       if (slot.appointments.length > 0 || slot.occupied) return "That slot is already booked.";
       return null;
     },
-    [appointments, availability],
+    [appointments, availability, config],
   );
 
   const respond = useCallback(

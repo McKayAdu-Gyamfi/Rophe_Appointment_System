@@ -1,4 +1,4 @@
-import type { Appointment, DoctorAvailability } from "./types";
+import type { Appointment, DoctorAvailability, ScheduleConfig } from "./types";
 import { dateKey } from "./format";
 
 // ---------------------------------------------------------------------------
@@ -9,10 +9,6 @@ import { dateKey } from "./format";
 // outside availability still render (greyed) so staff can see the shape of the
 // day rather than a truncated one.
 // ---------------------------------------------------------------------------
-
-export const SLOT_MINUTES = 30;
-export const DAY_START = "08:00";
-export const DAY_END = "17:00";
 
 export function toMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number);
@@ -40,9 +36,10 @@ export function weekDays(date: Date): Date[] {
 }
 
 /** Every slot label in the clinic day, available or not. */
-export function daySlotTimes(): string[] {
+export function daySlotTimes(config: ScheduleConfig): string[] {
   const times: string[] = [];
-  for (let m = toMinutes(DAY_START); m < toMinutes(DAY_END); m += SLOT_MINUTES) {
+  const { slotMinutes, dayStart, dayEnd } = config.clinicSettings;
+  for (let m = toMinutes(dayStart); m < toMinutes(dayEnd); m += slotMinutes) {
     times.push(toTime(m));
   }
   return times;
@@ -94,7 +91,7 @@ export interface DaySlot {
 }
 
 /**
- * Build the slot grid for one day. Appointments longer than SLOT_MINUTES mark
+ * Build the slot grid for one day. Appointments longer than slotMinutes mark
  * the slots they spill into as occupied, so a 45-minute visit doesn't leave a
  * bookable-looking gap behind it.
  */
@@ -102,11 +99,12 @@ export function buildDaySlots(
   date: Date,
   appointments: Appointment[],
   availability: DoctorAvailability[],
+  config: ScheduleConfig,
 ): DaySlot[] {
   const key = dateKey(date);
   const onThisDay = appointments.filter((a) => a.date === key);
 
-  return daySlotTimes().map((time) => {
+  return daySlotTimes(config).map((time) => {
     const slotStart = toMinutes(time);
 
     const starting = onThisDay.filter((a) => toMinutes(a.time) === slotStart);
@@ -129,8 +127,9 @@ export function bookableSlots(
   date: Date,
   appointments: Appointment[],
   availability: DoctorAvailability[],
+  config: ScheduleConfig,
 ): DaySlot[] {
-  return buildDaySlots(date, appointments, availability).filter(
+  return buildDaySlots(date, appointments, availability, config).filter(
     (slot) => slot.available && slot.appointments.length === 0 && !slot.occupied,
   );
 }
@@ -154,22 +153,24 @@ export function mergeSlotsIntoWindows(
   doctorId: string,
   dayOfWeek: number,
   openTimes: string[],
+  config: ScheduleConfig,
 ): DoctorAvailability[] {
   const sorted = [...new Set(openTimes)].sort((a, b) => toMinutes(a) - toMinutes(b));
   const windows: DoctorAvailability[] = [];
+  const { slotMinutes } = config.clinicSettings;
 
   for (const time of sorted) {
     const start = toMinutes(time);
     const previous = windows[windows.length - 1];
 
     if (previous && toMinutes(previous.endTime) === start) {
-      previous.endTime = toTime(start + SLOT_MINUTES);
+      previous.endTime = toTime(start + slotMinutes);
     } else {
       windows.push({
         doctorId,
         dayOfWeek,
         startTime: time,
-        endTime: toTime(start + SLOT_MINUTES),
+        endTime: toTime(start + slotMinutes),
         isAvailable: true,
       });
     }

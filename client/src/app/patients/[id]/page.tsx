@@ -20,8 +20,8 @@ import {
   UserRoundSearch,
   Clock3,
 } from "lucide-react";
-import { getAppointments, getPatient, getPatientVisitSummary } from "@/lib/api";
-import type { Appointment, Patient } from "@/lib/types";
+import { getAppointments, getPatient, getPatientVisitSummary, getClinicSettings } from "@/lib/api";
+import type { Appointment, Patient, ClinicSettings } from "@/lib/types";
 import {
   APPOINTMENT_STATUS_STYLES,
   CHANNEL_STYLES,
@@ -33,7 +33,6 @@ import {
   reasonLabel,
   type PatientVisitSummary,
 } from "@/lib/visits";
-import { FIRST_VISIT_MINUTES } from "@/lib/appointment-types";
 import { age, fmtDate, fmtLongDate, fmtTime, initials, startOfDay } from "@/lib/format";
 import { useRole } from "@/lib/role-context";
 import { StatCard } from "@/components/dashboard/stat-card";
@@ -47,20 +46,23 @@ export default function PatientDetailPage() {
   const [patient, setPatient] = useState<Patient | undefined>();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [summary, setSummary] = useState<PatientVisitSummary | undefined>();
+  const [settings, setSettings] = useState<ClinicSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const [p, appts, visitSummary] = await Promise.all([
+      const [p, appts, visitSummary, clinicSettings] = await Promise.all([
         getPatient(id),
         getAppointments(),
         getPatientVisitSummary(id),
+        getClinicSettings(),
       ]);
       if (!active) return;
       setPatient(p);
       setAppointments(appts.filter((a) => a.patientId === id));
       setSummary(visitSummary);
+      setSettings(clinicSettings);
       setLoading(false);
     })();
     return () => {
@@ -186,7 +188,7 @@ export default function PatientDetailPage() {
           )}
         </div>
 
-        {summary && <VisitStatusBanner summary={summary} canEdit={canEdit} patientId={patient.id} />}
+        {summary && settings && <VisitStatusBanner summary={summary} canEdit={canEdit} patientId={patient.id} firstVisitMinutes={settings.firstVisitMinutes} />}
 
         {/* Visit stats */}
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -397,10 +399,12 @@ function VisitStatusBanner({
   summary,
   canEdit,
   patientId,
+  firstVisitMinutes,
 }: {
   summary: PatientVisitSummary;
   canEdit: boolean;
   patientId: string;
+  firstVisitMinutes: number;
 }) {
   const style = RECALL_STATE_STYLES[summary.state];
 
@@ -466,7 +470,7 @@ function VisitStatusBanner({
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-teal-900">
-            First visit — {FIRST_VISIT_MINUTES} minutes
+            First visit — {firstVisitMinutes} minutes
           </p>
           <p className="text-xs text-teal-700">
             The clinic has not seen this patient before, so their appointment on{" "}

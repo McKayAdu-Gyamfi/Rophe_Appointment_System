@@ -10,9 +10,11 @@ import {
   getMessages,
   getPatients,
   sendMessage,
+  getDoctorAvailability,
+  getAppointmentTypes,
+  getClinicSettings,
 } from "@/lib/api";
-import type { Appointment, Doctor, DoctorAvailability, Message, Patient } from "@/lib/types";
-import { getDoctorAvailability } from "@/lib/api";
+import type { Appointment, Doctor, DoctorAvailability, Message, Patient, ScheduleConfig } from "@/lib/types";
 import { CHANNEL_STYLES } from "@/lib/status-styles";
 import { dateKey, fmtDate, startOfWeek, endOfWeek } from "@/lib/format";
 import { toMinutes } from "@/lib/schedule";
@@ -56,6 +58,7 @@ export default function DashboardPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [availability, setAvailability] = useState<DoctorAvailability[]>([]);
+  const [config, setConfig] = useState<ScheduleConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Appointment | null>(null);
   const [sendingId, setSendingId] = useState<string | null>(null);
@@ -65,12 +68,14 @@ export default function DashboardPage() {
   useEffect(() => {
     let active = true;
     (async () => {
-      const [appts, pts, msgs, docs, avail] = await Promise.all([
+      const [appts, pts, msgs, docs, avail, types, settings] = await Promise.all([
         getAppointments(),
         getPatients(),
         getMessages(),
         getDoctors(),
         getDoctorAvailability(),
+        getAppointmentTypes(),
+        getClinicSettings(),
       ]);
       if (!active) return;
       setAppointments(appts);
@@ -78,6 +83,7 @@ export default function DashboardPage() {
       setMessages(msgs);
       setDoctors(docs);
       setAvailability(avail);
+      setConfig({ clinicSettings: settings, appointmentTypes: types.filter((t) => t.isActive) });
       setLoading(false);
     })();
     return () => {
@@ -323,11 +329,14 @@ export default function DashboardPage() {
             patients={patientMap}
             onSelect={setSelected}
           />
-          <ClinicSchedulePanel
-            doctor={doctors[0]}
-            availability={availability}
-            appointments={appointments}
-          />
+          {config && (
+            <ClinicSchedulePanel
+              doctor={doctors[0]}
+              availability={availability}
+              appointments={appointments}
+              config={config}
+            />
+          )}
           <ActivityPanel messages={messages} patients={patientMap} limit={5} />
         </div>
       </div>

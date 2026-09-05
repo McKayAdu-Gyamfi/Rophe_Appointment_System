@@ -183,13 +183,28 @@ cd client && npm run dev
 
 ---
 
-## Deployment (later)
+## Deployment & CI
 
-- **client** → Vercel (set root directory to `client`)
-- **server** → Render / Railway / Fly.io (set root directory to `server`)
-- **database** → hosted Postgres (Supabase / Neon / Render)
+This repository is configured for automated CI/CD.
 
-Set each environment variable in the host's dashboard.
+### Continuous Integration (GitHub Actions)
+On every push to `main` or pull request, the `.github/workflows/ci.yml` pipeline will:
+- Check backend types and build the server.
+- Lint and typecheck the frontend, and build the Next.js client.
+
+### Backend & Database (Render)
+A `render.yaml` blueprint is included in the root to automate the deployment of the API and provision a managed PostgreSQL database.
+1. Connect your repository to [Render](https://render.com/).
+2. Render will automatically detect the `render.yaml` blueprint.
+3. Deploy the service. Render will provision the database, generate a secure `SESSION_SECRET`, set `MESSAGE_PROVIDER=noop` safely for the first launch, and run Prisma migrations automatically.
+
+### Frontend (Vercel)
+1. Import the repository into [Vercel](https://vercel.com/).
+2. Set the **Root Directory** to `client`.
+3. Set the **Environment Variable**: `NEXT_PUBLIC_API_URL` to your Render API URL (e.g., `https://rophe-api.onrender.com/api`).
+4. Deploy.
+
+Once Vercel finishes deploying, take its URL and set it as the `CLIENT_URL` environment variable on your Render API to allow secure cross-origin requests.
 
 ---
 

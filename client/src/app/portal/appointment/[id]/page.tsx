@@ -24,6 +24,8 @@ import {
   getPendingRequests,
   sendMessage,
   updateAppointmentStatus,
+  getAppointmentTypes,
+  getClinicSettings,
 } from "@/lib/api";
 import type {
   Appointment,
@@ -31,6 +33,7 @@ import type {
   DoctorAvailability,
   Patient,
   PatientRequest,
+  ScheduleConfig,
 } from "@/lib/types";
 import { CLINIC } from "@/lib/clinic";
 import { dateKey, fmtLongDate, fmtTime } from "@/lib/format";
@@ -47,6 +50,7 @@ export default function PatientAppointmentPage() {
   const [doctor, setDoctor] = useState<Doctor | undefined>();
   const [availability, setAvailability] = useState<DoctorAvailability[]>([]);
   const [requests, setRequests] = useState<PatientRequest[]>([]);
+  const [config, setConfig] = useState<ScheduleConfig | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [panel, setPanel] = useState<Panel>("none");
@@ -59,25 +63,28 @@ export default function PatientAppointmentPage() {
 
   const load = useCallback(async () => {
     const appt = await getAppointment(id);
-    const [docs, avail, reqs] = await Promise.all([
+    const [docs, avail, reqs, types, settings] = await Promise.all([
       getDoctors(),
       getDoctorAvailability(),
       getPendingRequests(),
+      getAppointmentTypes(),
+      getClinicSettings(),
     ]);
     const pat = appt ? await getPatient(appt.patientId) : undefined;
-    return { appt, pat, docs, avail, reqs };
+    return { appt, pat, docs, avail, reqs, types, settings };
   }, [id]);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const { appt, pat, docs, avail, reqs } = await load();
+      const { appt, pat, docs, avail, reqs, types, settings } = await load();
       if (!active) return;
       setAppointment(appt);
       setPatient(pat);
       setDoctor(docs.find((d) => d.id === appt?.doctorId) ?? docs[0]);
       setAvailability(avail);
       setRequests(reqs);
+      setConfig({ clinicSettings: settings, appointmentTypes: types.filter(t => t.isActive) });
       setLoading(false);
     })();
     return () => {
@@ -92,11 +99,11 @@ export default function PatientAppointmentPage() {
 
   // Slots the patient may ask for — same availability rules staff see.
   const slotOptions = useMemo(() => {
-    if (!preferredDate) return [];
-    return bookableSlots(new Date(`${preferredDate}T00:00:00`), [], availability).map(
+    if (!preferredDate || !config) return [];
+    return bookableSlots(new Date(`${preferredDate}T00:00:00`), [], availability, config).map(
       (s) => s.time,
     );
-  }, [preferredDate, availability]);
+  }, [preferredDate, availability, config]);
 
   async function confirmAttendance() {
     if (!appointment || !patient) return;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import type { Appointment, Doctor, DoctorAvailability } from "@/lib/types";
+import type { Appointment, Doctor, DoctorAvailability, ScheduleConfig } from "@/lib/types";
 import { dateKey, initials, startOfWeek } from "@/lib/format";
 import { addDays, availabilityLabel, bookableSlots } from "@/lib/schedule";
 import { Panel, PanelHeader, PanelMenuLink, Pill } from "./panel";
@@ -15,10 +15,12 @@ export function ClinicSchedulePanel({
   doctor,
   availability,
   appointments,
+  config,
 }: {
   doctor: Doctor | undefined;
   availability: DoctorAvailability[];
   appointments: Appointment[];
+  config: ScheduleConfig;
 }) {
   const { days, openDays, booked, free } = useMemo(() => {
     const start = startOfWeek(new Date());
@@ -39,7 +41,7 @@ export function ClinicSchedulePanel({
         dayLabel: date.toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
         window,
         booked: dayAppointments.length,
-        free: bookableSlots(date, appointments, availability).length,
+        free: bookableSlots(date, appointments, availability, config).length,
       };
     });
 
@@ -49,7 +51,7 @@ export function ClinicSchedulePanel({
       booked: days.reduce((s, d) => s + d.booked, 0),
       free: days.reduce((s, d) => s + d.free, 0),
     };
-  }, [availability, appointments]);
+  }, [availability, appointments, config]);
 
   const openOrToday = days.filter((d) => d.window !== null || d.isToday);
   const closedDays = days

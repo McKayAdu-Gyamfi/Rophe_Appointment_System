@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { CalendarCheck, Info, Loader2, Repeat } from "lucide-react";
-import { getAppointments, getDoctorAvailability, setDoctorDayAvailability } from "@/lib/api";
-import type { Appointment, DoctorAvailability } from "@/lib/types";
+import { getAppointments, getDoctorAvailability, setDoctorDayAvailability, getClinicSettings, getAppointmentTypes } from "@/lib/api";
+import type { Appointment, DoctorAvailability, ScheduleConfig } from "@/lib/types";
 import { dateKey, fmtTime } from "@/lib/format";
 import {
   daySlotTimes,
@@ -54,23 +54,27 @@ function mondayOfCurrentWeek(): Date {
 }
 
 export default function DoctorAvailabilityPage() {
-  const times = useMemo(() => daySlotTimes(), []);
-
   const [availability, setAvailability] = useState<DoctorAvailability[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [config, setConfig] = useState<ScheduleConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingDay, setSavingDay] = useState<number | null>(null);
+
+  const times = useMemo(() => config ? daySlotTimes(config) : [], [config]);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const [avail, appts] = await Promise.all([
+      const [avail, appts, settings, types] = await Promise.all([
         getDoctorAvailability(DOCTOR_ID),
         getAppointments(),
+        getClinicSettings(),
+        getAppointmentTypes(),
       ]);
       if (!active) return;
       setAvailability(avail);
       setAppointments(appts.filter((a) => a.doctorId === DOCTOR_ID));
+      setConfig({ clinicSettings: settings, appointmentTypes: types.filter((t) => t.isActive) });
       setLoading(false);
     })();
     return () => {
@@ -126,7 +130,8 @@ export default function DoctorAvailabilityPage() {
   );
 
   const persist = useCallback(async (dayOfWeek: number, openTimes: string[]) => {
-    const windows = mergeSlotsIntoWindows(DOCTOR_ID, dayOfWeek, openTimes);
+    if (!config) return;
+    const windows = mergeSlotsIntoWindows(DOCTOR_ID, dayOfWeek, openTimes, config);
     setSavingDay(dayOfWeek);
     try {
       await setDoctorDayAvailability(DOCTOR_ID, dayOfWeek, windows);
@@ -137,7 +142,7 @@ export default function DoctorAvailabilityPage() {
     } finally {
       setSavingDay(null);
     }
-  }, []);
+  }, [config]);
 
   const toggleSlot = useCallback(
     (dayOfWeek: number, time: string) => {

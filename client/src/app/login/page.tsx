@@ -13,7 +13,6 @@ import {
   UserRound,
 } from "lucide-react";
 import { getStaffUsers } from "@/lib/api";
-import { DEMO_PASSWORD } from "@/lib/mockData";
 import type { StaffSession } from "@/lib/types";
 import { CLINIC } from "@/lib/clinic";
 import { LANDING_BY_ROLE } from "@/lib/nav";
@@ -30,25 +29,13 @@ export default function LoginPage() {
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [demoAccounts, setDemoAccounts] = useState<StaffSession[]>([]);
 
   // Already signed in? Don't sit on the login screen.
   useEffect(() => {
     if (ready && session) router.replace(LANDING_BY_ROLE[session.role]);
   }, [ready, session, router]);
 
-  useEffect(() => {
-    let active = true;
-    void getStaffUsers().then((users) => {
-      // Only seeded accounts share DEMO_PASSWORD. An invited colleague has no
-      // password at all yet, so listing them here would offer a shortcut that
-      // cannot work.
-      if (active) setDemoAccounts(users.filter((u) => u.status === "active"));
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
+  // Demo accounts removed
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -68,10 +55,9 @@ export default function LoginPage() {
       return;
     }
     // Role decides the landing page; the provider has the session by now.
-    const matched = demoAccounts.find(
-      (u) => u.email.toLowerCase() === email.trim().toLowerCase(),
-    );
-    router.replace(LANDING_BY_ROLE[matched?.role ?? "front-desk"]);
+    // Use the session directly since result.session is returned.
+    const role = result.session?.role ?? "front-desk";
+    router.replace(LANDING_BY_ROLE[role]);
   }
 
   return (
@@ -233,46 +219,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Demo accounts — prototype convenience, delete with the mock auth */}
-          <div className="mt-6 rounded-2xl border border-dashed border-slate-200 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Demo accounts
-            </p>
-            <ul className="mt-2.5 space-y-1.5">
-              {demoAccounts.map((user) => (
-                <li key={user.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmail(user.email);
-                      setPassword(DEMO_PASSWORD);
-                      setError(null);
-                    }}
-                    className={cn(
-                      "flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition",
-                      "hover:bg-brand-50",
-                    )}
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-slate-800">
-                        {user.fullName}
-                      </span>
-                      <span className="block truncate text-xs text-slate-500">{user.email}</span>
-                    </span>
-                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                      {user.role === "doctor" ? "Doctor" : "Front desk"}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2.5 px-2.5 text-xs text-slate-400">
-              Tap an account to fill the form — password{" "}
-              <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[11px] text-slate-600">
-                {DEMO_PASSWORD}
-              </code>
-            </p>
-          </div>
+          {/* Demo accounts removed */}
 
           <div className="mt-6 border-t border-slate-100 pt-4 text-center text-xs text-slate-500">
             Patients don&apos;t sign in — they open the link sent to their phone.

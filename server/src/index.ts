@@ -3,6 +3,12 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import { env } from "./config/env";
 import { authRoutes } from "./routes/authRoutes";
+import { doctorRoutes } from "./routes/doctorRoutes";
+import { appointmentTypeRoutes } from "./routes/appointmentTypeRoutes";
+import { clinicSettingsRoutes } from "./routes/clinicSettingsRoutes";
+import { patientRoutes } from "./routes/patientRoutes";
+import { templateRoutes } from "./routes/templateRoutes";
+import { requestRoutes } from "./routes/requestRoutes";
 import { errorHandler, notFound } from "./middleware/errorHandler";
 import { requestLogger } from "./middleware/requestLogger";
 
@@ -36,6 +42,12 @@ app.get("/api/health", (_req, res) => {
 // Mount them here; everything else about a route lives in its own folder, so
 // this line should be the only merge conflict either of you sees.
 app.use("/api/auth", authRoutes);
+app.use("/api/doctors", doctorRoutes);
+app.use("/api/appointment-types", appointmentTypeRoutes);
+app.use("/api/clinic-settings", clinicSettingsRoutes);
+app.use("/api/patients", patientRoutes);
+app.use("/api/templates", templateRoutes);
+app.use("/api/requests", requestRoutes);
 
 // ---- Fallbacks ----
 app.use(notFound);
