@@ -58,6 +58,13 @@ export const env = {
   sessionDays: int("SESSION_DAYS", 7),
 
   /**
+   * How long an invitation link stays usable. Short on purpose: it is a
+   * credential sent over WhatsApp, and a new joiner who has not used it within
+   * a week should be given a fresh one rather than a stale one that still works.
+   */
+  inviteDays: int("INVITE_DAYS", 7),
+
+  /**
    * Which messaging adapter to use. `noop` logs instead of sending, so the
    * whole application works end to end before any provider contract exists.
    */

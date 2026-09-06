@@ -346,6 +346,7 @@ export interface InviteStaffInput {
   role: StaffRole;
   jobTitle: string;
   specialty?: string;
+  /** Ignored by the API, which records the signed-in inviter instead. */
   invitedBy: string;
 }
 
@@ -355,7 +356,7 @@ export type InviteStaffResult =
 
 export async function inviteStaffUser(input: InviteStaffInput): Promise<InviteStaffResult> {
   try {
-    const data = await request<{ user: StaffSession; inviteToken: string }>("/staff/invite", {
+    const data = await request<{ user: StaffSession; inviteToken: string }>("/staff/invitations", {
       method: "POST",
       body: JSON.stringify(input),
     });
@@ -366,7 +367,16 @@ export async function inviteStaffUser(input: InviteStaffInput): Promise<InviteSt
 }
 
 export async function getStaffInvitation(token: string): Promise<StaffSession | undefined> {
-  return request<StaffSession>(`/auth/invitation/${token}`);
+  try {
+    const { session } = await request<{ session: StaffSession }>(
+      `/staff/invitations/${encodeURIComponent(token)}`,
+    );
+    return session;
+  } catch {
+    // A bad, used or expired link is not an error to the invite screen — it
+    // renders its "this link is not valid" stage off an absent invitee.
+    return undefined;
+  }
 }
 
 export type AcceptInvitationResult =
@@ -378,10 +388,13 @@ export async function acceptStaffInvitation(
   password: string,
 ): Promise<AcceptInvitationResult> {
   try {
-    const session = await request<StaffSession>("/auth/accept-invitation", {
-      method: "POST",
-      body: JSON.stringify({ token, password }),
-    });
+    const { session } = await request<{ session: StaffSession }>(
+      `/staff/invitations/${encodeURIComponent(token)}/accept`,
+      {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      },
+    );
     return { ok: true, session };
   } catch (error: unknown) {
     return { ok: false, error: errorMessage(error) };
@@ -390,7 +403,7 @@ export async function acceptStaffInvitation(
 
 export async function revokeStaffInvitation(id: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    await request(`/staff/${id}/invitation`, { method: "DELETE" });
+    await request(`/staff/invitations/${id}`, { method: "DELETE" });
     return { ok: true };
   } catch (error: unknown) {
     return { ok: false, error: errorMessage(error) };
@@ -401,7 +414,7 @@ export async function resendStaffInvitation(
   id: string,
 ): Promise<{ ok: true; inviteToken: string } | { ok: false; error: string }> {
   try {
-    const data = await request<{ inviteToken: string }>(`/staff/${id}/resend-invitation`, {
+    const data = await request<{ inviteToken: string }>(`/staff/invitations/${id}/resend`, {
       method: "POST",
     });
     return { ok: true, inviteToken: data.inviteToken };
