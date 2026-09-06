@@ -15,11 +15,18 @@ import {
   WeekView,
   type ScheduleView,
 } from "@/components/schedule-views";
+import { useAuth } from "@/lib/role-context";
 import { cn } from "@/lib/utils";
 
-const DOCTOR_ID = "doc-1";
-
+/**
+ * Whose diary this is comes from the session, never a constant. The invite
+ * flow creates real doctor accounts, so a hardcoded id meant a new joiner
+ * opened Dr. Mensah's diary. Availability is fetched as "me" — the server
+ * resolves the doctor from the session rather than trusting an id from here.
+ */
 export default function DoctorSchedulePage() {
+  const { session, ready } = useAuth();
+  const doctorId = session?.doctorId;
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [availability, setAvailability] = useState<DoctorAvailability[]>([]);
@@ -31,18 +38,19 @@ export default function DoctorSchedulePage() {
   const [selected, setSelected] = useState<Appointment | null>(null);
 
   useEffect(() => {
+    if (!doctorId) return;
     let active = true;
     (async () => {
       const [appts, pts, avail, types, settings] = await Promise.all([
         getAppointments(),
         getPatients(),
-        getDoctorAvailability(DOCTOR_ID),
+        getDoctorAvailability(),
         getAppointmentTypes(),
         getClinicSettings(),
       ]);
       if (!active) return;
       // Only this doctor's own appointments (PRD Section 3.2 #3).
-      setAppointments(appts.filter((a) => a.doctorId === DOCTOR_ID));
+      setAppointments(appts.filter((a) => a.doctorId === doctorId));
       setPatients(pts);
       setAvailability(avail);
       setConfig({ clinicSettings: settings, appointmentTypes: types.filter(t => t.isActive) });
@@ -51,7 +59,7 @@ export default function DoctorSchedulePage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [doctorId]);
 
   const patientMap = useMemo(() => {
     const m = new Map<string, Patient>();
@@ -73,7 +81,23 @@ export default function DoctorSchedulePage() {
     [view],
   );
 
-  if (loading) {
+  // Front desk and admin have no diary of their own. Reaching these screens is
+  // a navigation mistake, not an error — say so rather than rendering an empty
+  // week that looks like a doctor with nothing booked.
+  if (ready && !doctorId) {
+    return (
+      <div className="px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-2xl rounded-surface bg-slate-100 p-6 text-center">
+          <h1 className="text-base font-semibold text-slate-900">This screen is for doctors</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Your account isn&apos;t linked to a doctor record, so there is no diary to show.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!ready || loading) {
     return (
       <div className="px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl animate-pulse space-y-4 rounded-surface bg-slate-100 p-4 sm:p-5">

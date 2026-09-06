@@ -27,6 +27,19 @@ import { toWireAvailability, toWireException } from "../mappers/recordMappers";
 // only ever read and write their own hours.
 // ---------------------------------------------------------------------------
 
+/**
+ * Which doctor this request is about.
+ *
+ * "me" is the signed-in doctor, so their own screens send no id at all — there
+ * is nothing in the request to tamper with, and the server decides whose hours
+ * are being read or written. Front desk must name a doctor explicitly;
+ * resolveDoctorId refuses an unqualified "me" from an account that is not one.
+ */
+function scopedDoctorId(req: Request): string {
+  const param = req.params.id;
+  return resolveDoctorId(req, param === "me" ? undefined : param);
+}
+
 /** Confirm the doctor exists before writing rows that hang off them. */
 async function requireDoctor(doctorId: string) {
   const doctor = await prisma.doctor.findUnique({ where: { id: doctorId } });
@@ -66,7 +79,7 @@ function assertUsableWindows(windows: { startTime: string; endTime: string }[]) 
 // --- Weekly pattern --------------------------------------------------------
 
 export async function getAvailability(req: Request, res: Response) {
-  const doctorId = resolveDoctorId(req, req.params.id);
+  const doctorId = scopedDoctorId(req);
   await requireDoctor(doctorId);
 
   // Today's exceptions still matter — the clinic is part-way through the day.
@@ -100,7 +113,7 @@ export const setDaySchema = z.object({
 });
 
 export async function setDay(req: Request, res: Response) {
-  const doctorId = resolveDoctorId(req, req.params.id);
+  const doctorId = scopedDoctorId(req);
   await requireDoctor(doctorId);
 
   const dayOfWeek = dayOfWeekSchema.parse(req.params.day);
@@ -150,7 +163,7 @@ export const createExceptionSchema = z
   });
 
 export async function createException(req: Request, res: Response) {
-  const doctorId = resolveDoctorId(req, req.params.id);
+  const doctorId = scopedDoctorId(req);
   await requireDoctor(doctorId);
 
   const input = req.body as z.infer<typeof createExceptionSchema>;
@@ -185,7 +198,7 @@ export async function createException(req: Request, res: Response) {
 }
 
 export async function deleteException(req: Request, res: Response) {
-  const doctorId = resolveDoctorId(req, req.params.id);
+  const doctorId = scopedDoctorId(req);
 
   // Scope the delete to the resolved doctor: an id alone must not be enough to
   // remove somebody else's day off.

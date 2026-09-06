@@ -307,8 +307,12 @@ export interface AvailabilityException {
  * The endpoint answers with the weekly pattern *and* the upcoming exceptions;
  * this keeps returning just the windows, which is what the availability grid
  * reads. Use getDoctorExceptions for the other half.
+ *
+ * "me" is the default and is what a doctor's own screens pass: the server
+ * resolves whose hours these are from the session, so no doctorId is sent for
+ * a doctor-scoped action. Front desk names the doctor explicitly.
  */
-export async function getDoctorAvailability(doctorId = "doc-1"): Promise<DoctorAvailability[]> {
+export async function getDoctorAvailability(doctorId = "me"): Promise<DoctorAvailability[]> {
   const { windows } = await request<{
     windows: DoctorAvailability[];
     exceptions: AvailabilityException[];

@@ -209,6 +209,7 @@ export function AppointmentForm({
     setError(null);
 
     if (!patientId) return setError("Select a patient for this appointment.");
+    if (!doctor) return setError("Select a doctor for this appointment.");
     if (!openLabel) return setError("The doctor isn't available on that day — pick another date.");
     if (!time) return setError("Pick an available time slot.");
     if (!isSlotBookable(time)) {
@@ -242,7 +243,7 @@ export function AppointmentForm({
           })
         : await bookAppointment({
             patientId,
-            doctorId: doctor?.id ?? "doc-1",
+            doctorId: doctor.id,
             appointmentType: type,
             date,
             time,
