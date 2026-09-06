@@ -296,19 +296,67 @@ export async function getPendingRequests(): Promise<PatientRequest[]> {
   return request<PatientRequest[]>("/requests");
 }
 
+// --- Patient portal -------------------------------------------------------
+//
+// A patient has no account; the token in their link is the credential. It
+// names the appointment, so nothing here sends an appointmentId or patientId —
+// the server takes both from the token.
+
+export interface PortalView {
+  appointment: {
+    id: string;
+    appointmentType: string;
+    date: string;
+    time: string;
+    durationMinutes: number;
+    status: AppointmentStatus;
+  };
+  /** Name only — the page greets the patient, it does not show their record. */
+  patient: { fullName: string };
+  doctor: { fullName: string; specialty: string };
+  availability: DoctorAvailability[];
+  requests: PatientRequest[];
+  clinicSettings: ClinicSettings | null;
+  appointmentTypes: AppointmentTypeConfig[];
+}
+
+/**
+ * Mint a fresh patient link. Front desk work — the token comes back once, so
+ * this response is the only chance to copy it.
+ */
+export async function createPortalLink(
+  appointmentId: string,
+): Promise<{ token: string; url: string }> {
+  return request<{ token: string; url: string }>(`/appointments/${appointmentId}/portal-link`, {
+    method: "POST",
+  });
+}
+
+export async function getPortalAppointment(token: string): Promise<PortalView> {
+  return request<PortalView>(`/portal/${encodeURIComponent(token)}`);
+}
+
+export async function confirmPortalAppointment(
+  token: string,
+): Promise<{ status: AppointmentStatus }> {
+  return request<{ status: AppointmentStatus }>(
+    `/portal/${encodeURIComponent(token)}/confirm`,
+    { method: "POST" },
+  );
+}
+
 export interface CreatePatientRequestInput {
-  appointmentId: string;
-  patientId: string;
   requestType: PatientRequest["requestType"];
   requestedDate?: string;
   requestedTime?: string;
   reason?: string;
 }
 
-export async function createPatientRequest(
+export async function createPortalRequest(
+  token: string,
   input: CreatePatientRequestInput,
 ): Promise<PatientRequest> {
-  return request<PatientRequest>("/requests", {
+  return request<PatientRequest>(`/portal/${encodeURIComponent(token)}/requests`, {
     method: "POST",
     body: JSON.stringify(input),
   });

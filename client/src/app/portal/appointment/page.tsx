@@ -3,15 +3,18 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarOff, Loader2 } from "lucide-react";
-import { getAppointments } from "@/lib/api";
+import { createPortalLink, getAppointments } from "@/lib/api";
 import { CLINIC } from "@/lib/clinic";
 import { dateKey } from "@/lib/format";
 
 /**
- * Stands in for the "secure link" a patient would receive by WhatsApp/SMS.
- * Picks the soonest upcoming appointment and forwards to its page, so the
- * Patient role in the switcher always lands on something live rather than a
- * hardcoded id that could drift out of the seed.
+ * The staff-side preview of what a patient sees.
+ *
+ * A patient never comes through here — they arrive on a tokenised link sent by
+ * WhatsApp or SMS. This picks the soonest upcoming appointment, mints a real
+ * link for it and forwards, so the preview exercises the same tokenised page
+ * the patient gets rather than a bare record id, which is precisely what #13
+ * removed.
  */
 export default function PortalEntryPage() {
   const router = useRouter();
@@ -30,11 +33,14 @@ export default function PortalEntryPage() {
           a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date),
         )[0];
 
-      if (next) {
-        router.replace(`/portal/appointment/${next.id}`);
-      } else {
+      if (!next) {
         setEmpty(true);
+        return;
       }
+
+      const { token } = await createPortalLink(next.id);
+      if (!active) return;
+      router.replace(`/portal/appointment/${token}`);
     })();
     return () => {
       active = false;

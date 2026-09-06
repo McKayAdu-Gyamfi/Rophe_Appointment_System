@@ -1,23 +1,12 @@
 import { Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { badRequest, notFound, forbidden } from "../lib/httpError";
-import { hashToken } from "../lib/crypto";
+import { badRequest, notFound } from "../lib/httpError";
 import { messageProvider } from "../services/messageProvider";
-import { requestTypeCodec } from "../mappers/enums";
 import { toWirePatientRequest } from "../mappers/recordMappers";
-import { toInstant } from "../mappers/datetime";
-import { dateOnlySchema, timeSchema } from "../middleware/validate";
 
 // The portal sends what the frontend types describe: a lowercase request type
 // and a separate date and clock time. The instant is assembled here.
-export const createRequestSchema = z.object({
-  requestType: z.enum(requestTypeCodec.wireValues).transform((v) => requestTypeCodec.toDb(v)),
-  requestedDate: dateOnlySchema.optional(),
-  requestedTime: timeSchema.optional(),
-  reason: z.string().optional(),
-});
-
 /** Only a decision — a request cannot be moved back to pending. */
 export const respondRequestSchema = z.object({
   status: z.enum(["confirmed", "declined"]).transform((v) =>
@@ -32,61 +21,6 @@ export async function list(req: Request, res: Response) {
     orderBy: { createdAt: "desc" },
   });
   res.json(requests.map(toWirePatientRequest));
-}
-
-export async function create(req: Request, res: Response) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    throw forbidden("Valid portal token required in Authorization header");
-  }
-
-  const token = authHeader.split(" ")[1];
-  const tokenHash = hashToken(token);
-
-  const portalToken = await prisma.portalAccessToken.findUnique({
-    where: { tokenHash },
-    include: { appointment: true }
-  });
-
-  if (!portalToken) {
-    throw forbidden("Invalid portal token");
-  }
-
-  if (portalToken.revokedAt || portalToken.expiresAt < new Date()) {
-    throw forbidden("Portal token expired or revoked");
-  }
-
-  const { requestType, requestedDate, requestedTime, reason } = req.body as z.infer<
-    typeof createRequestSchema
-  >;
-
-  if (requestType === "RESCHEDULE" && (!requestedDate || !requestedTime)) {
-    throw badRequest("Choose a new date and time for a reschedule request.");
-  }
-
-  const requestedStartsAt =
-    requestedDate && requestedTime ? toInstant(requestedDate, requestedTime) : null;
-
-  const patientRequest = await prisma.$transaction(async (tx) => {
-    // Record usage
-    await tx.portalAccessToken.update({
-      where: { id: portalToken.id },
-      data: { lastUsedAt: new Date() }
-    });
-
-    return tx.patientRequest.create({
-      data: {
-        appointmentId: portalToken.appointmentId,
-        patientId: portalToken.appointment.patientId,
-        requestType,
-        requestedStartsAt,
-        reason,
-        status: "PENDING",
-      }
-    });
-  });
-
-  res.status(201).json(toWirePatientRequest(patientRequest));
 }
 
 export async function respond(req: Request, res: Response) {

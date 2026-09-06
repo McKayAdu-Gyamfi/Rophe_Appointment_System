@@ -9,7 +9,8 @@ export type TemplateVariableKey =
   | "doctor"
   | "clinic_name"
   | "clinic_phone"
-  | "last_visit";
+  | "last_visit"
+  | "portal_link";
 
 export const TEMPLATE_VARIABLES: TemplateVariableKey[] = [
   "first_name",
@@ -19,14 +20,15 @@ export const TEMPLATE_VARIABLES: TemplateVariableKey[] = [
   "doctor",
   "clinic_name",
   "clinic_phone",
-  "last_visit"
+  "last_visit",
+  "portal_link"
 ];
 
 const VARIABLES_SET = new Set(TEMPLATE_VARIABLES);
 
 export const VARIABLES_BY_TYPE: Record<MessageType, TemplateVariableKey[]> = {
-  CONFIRMATION: ["first_name", "full_name", "date", "time", "doctor", "clinic_name", "clinic_phone"],
-  REMINDER: ["first_name", "full_name", "date", "time", "doctor", "clinic_name", "clinic_phone"],
+  CONFIRMATION: ["first_name", "full_name", "date", "time", "doctor", "clinic_name", "clinic_phone", "portal_link"],
+  REMINDER: ["first_name", "full_name", "date", "time", "doctor", "clinic_name", "clinic_phone", "portal_link"],
   FOLLOW_UP: ["first_name", "full_name", "date", "time", "doctor", "clinic_name", "clinic_phone"],
   RECALL: ["first_name", "full_name", "last_visit", "doctor", "clinic_name", "clinic_phone"],
   BIRTHDAY: ["first_name", "full_name", "clinic_name", "clinic_phone"],
@@ -162,6 +164,8 @@ export interface RenderContext {
   doctorFullName?: string;
   /** ISO date of the last completed visit. Only recall messages use it. */
   lastVisitDate?: string;
+  /** The patient's own link to this appointment. Confirmations and reminders. */
+  portalLink?: string;
 }
 
 /**
@@ -190,6 +194,12 @@ const RESOLVERS: Record<
   last_visit: {
     resolve: (ctx) => (ctx.lastVisitDate ? fmtMessageDate(ctx.lastVisitDate) : undefined),
     fallback: "a while",
+  },
+  portal_link: {
+    resolve: (ctx) => ctx.portalLink,
+    // A message whose link failed to render must still tell the patient how to
+    // reach the clinic, rather than trailing off mid-sentence.
+    fallback: `call ${CLINIC.phone}`,
   },
   clinic_name: { resolve: () => CLINIC.name, fallback: CLINIC.name },
   clinic_phone: { resolve: () => CLINIC.phone, fallback: CLINIC.phone },

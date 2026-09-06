@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   book,
   bookSchema,
+  createPortalLink,
   get,
   list,
   setStatus,
@@ -29,3 +30,6 @@ appointmentRoutes.patch(
   validateBody(statusSchema),
   asyncHandler(setStatus),
 );
+
+// Front desk minting the patient's own link — returned once, stored hashed.
+appointmentRoutes.post("/:id/portal-link", requireFrontDesk, asyncHandler(createPortalLink));

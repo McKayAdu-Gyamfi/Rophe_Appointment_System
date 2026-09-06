@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma";
 import { notFound } from "../lib/httpError";
 import { renderTemplate } from "../lib/templates";
 import { messageProvider } from "./messageProvider";
+import { issuePortalToken, portalUrl } from "./portal";
 import { toDateKey, toTimeKey } from "../mappers/datetime";
 
 // ---------------------------------------------------------------------------
@@ -70,12 +71,20 @@ export async function sendMessage(input: SendInput) {
         })
       : null;
 
+  // A confirmation or reminder is where the patient gets their link, and a
+  // resend issues a fresh one rather than reusing the old.
+  const portalToken =
+    appointment && (input.type === "CONFIRMATION" || input.type === "REMINDER")
+      ? await issuePortalToken(appointment.id)
+      : null;
+
   const body = renderTemplate(template.body, {
     patientFullName: patient.fullName,
     appointmentDate: appointment ? toDateKey(appointment.startsAt) : undefined,
     appointmentTime: appointment ? toTimeKey(appointment.startsAt) : undefined,
     doctorFullName: appointment?.doctor.user.fullName,
     lastVisitDate: lastVisit ? toDateKey(lastVisit.startsAt) : undefined,
+    portalLink: portalToken ? portalUrl(portalToken) : undefined,
   });
 
   const resolved = resolveChannel(input.channel ?? patient.preferredChannel, patient);

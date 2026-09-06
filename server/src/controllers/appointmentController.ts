@@ -14,6 +14,7 @@ import { appointmentStatusCodec } from "../mappers/enums";
 import { toInstant } from "../mappers/datetime";
 import { toWireAppointment } from "../mappers/recordMappers";
 import { sendMessage } from "../services/messaging";
+import { issuePortalToken, portalUrl, revokePortalTokens } from "../services/portal";
 import {
   assertInsideAvailability,
   assertNoOverlap,
@@ -280,6 +281,12 @@ export async function update(req: Request, res: Response) {
       await writeStatusAudit(tx, actorUserId, existing.id, existing.status, nextStatus);
     }
 
+    // A link is a credential for a visit that is now not happening. Both write
+    // paths can cancel, so both have to revoke.
+    if (nextStatus === "CANCELLED" && existing.status !== "CANCELLED") {
+      await revokePortalTokens(existing.id);
+    }
+
     return saved;
   });
 
@@ -314,6 +321,11 @@ export async function setStatus(req: Request, res: Response) {
       await writeStatusAudit(tx, actorUserId, existing.id, existing.status, nextStatus);
     }
 
+    // A link is a credential for a visit that is now not happening.
+    if (nextStatus === "CANCELLED" && existing.status !== "CANCELLED") {
+      await revokePortalTokens(existing.id);
+    }
+
     return saved;
   });
 
@@ -344,4 +356,24 @@ function writeStatusAudit(
       },
     },
   });
+}
+
+/**
+ * Mint a fresh patient link for an appointment.
+ *
+ * Front desk needs this for the ordinary case of a patient who deleted the
+ * message or changed phone. Like a staff invitation, the token is returned
+ * exactly once — what is stored is only its digest — so the response is the
+ * single opportunity to copy it.
+ */
+export async function createPortalLink(req: Request, res: Response) {
+  const appointment = await prisma.appointment.findUnique({ where: { id: req.params.id } });
+  if (!appointment) throw notFound("That appointment could not be found.");
+
+  if (appointment.status === "CANCELLED") {
+    throw conflict("That appointment was cancelled, so there is nothing to link to.");
+  }
+
+  const token = await issuePortalToken(appointment.id);
+  res.status(201).json({ token, url: portalUrl(token) });
 }
