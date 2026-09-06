@@ -46,11 +46,22 @@ if (isProduction && sessionSecret.startsWith("dev-only")) {
   );
 }
 
+const clientUrl = process.env.CLIENT_URL?.trim() || "http://localhost:3000";
+
+// credentials:true forbids a wildcard origin, so CORS is only ever as correct
+// as this value. Defaulting to localhost in production would not fail loudly —
+// it would just refuse every real browser, which is a confusing way to find out.
+if (isProduction && clientUrl.includes("localhost")) {
+  throw new Error(
+    "CLIENT_URL is still pointing at localhost. Set it to the deployed client origin.",
+  );
+}
+
 export const env = {
   nodeEnv,
   isProduction,
   port: int("PORT", 4000),
-  clientUrl: process.env.CLIENT_URL?.trim() || "http://localhost:3000",
+  clientUrl,
   databaseUrl: required("DATABASE_URL"),
 
   sessionSecret,

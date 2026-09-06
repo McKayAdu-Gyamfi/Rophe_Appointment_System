@@ -5,6 +5,7 @@ import { badRequest, conflict, notFound } from "../lib/httpError";
 import { dateOnlySchema, timeSchema } from "../middleware/validate";
 import { resolveDoctorId } from "../middleware/auth";
 import { toWireAvailability, toWireException } from "../mappers/recordMappers";
+import { recordAudit } from "../services/audit";
 
 // ---------------------------------------------------------------------------
 // When a doctor works.
@@ -169,6 +170,14 @@ export async function setDay(req: Request, res: Response) {
   // Appointments are never touched here. A patient booked into a slot the
   // doctor has just closed keeps their appointment; front desk is told about
   // the clash and moves it deliberately.
+  recordAudit({
+    actorUserId: req.auth!.userId,
+    action: "availability.day_replaced",
+    entity: "Doctor",
+    entityId: doctorId,
+    meta: { dayOfWeek, windows: sorted },
+  });
+
   res.json(saved.map(toWireAvailability));
 }
 
@@ -223,6 +232,14 @@ export async function createException(req: Request, res: Response) {
     },
   });
 
+  recordAudit({
+    actorUserId: req.auth!.userId,
+    action: "availability.exception_added",
+    entity: "Doctor",
+    entityId: doctorId,
+    meta: { date: input.date, isClosed: input.isClosed },
+  });
+
   res.status(201).json(toWireException(exception));
 }
 
@@ -237,6 +254,14 @@ export async function deleteException(req: Request, res: Response) {
   if (!exception) throw notFound("That exception could not be found.");
 
   await prisma.availabilityException.delete({ where: { id: exception.id } });
+
+  recordAudit({
+    actorUserId: req.auth!.userId,
+    action: "availability.exception_removed",
+    entity: "Doctor",
+    entityId: doctorId,
+    meta: { exceptionId: exception.id },
+  });
 
   res.status(204).end();
 }

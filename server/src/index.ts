@@ -1,4 +1,5 @@
 import express from "express";
+import helmet from "helmet";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { env } from "./config/env";
@@ -17,6 +18,7 @@ import { templateRoutes } from "./routes/templateRoutes";
 import { requestRoutes } from "./routes/requestRoutes";
 import { errorHandler, notFound } from "./middleware/errorHandler";
 import { requestLogger } from "./middleware/requestLogger";
+import { startCleanup } from "./services/cleanup";
 
 const app = express();
 
@@ -25,6 +27,18 @@ const app = express();
 // credentials:true is required for the session cookie to travel; with it, the
 // CORS origin must be an explicit URL and can never be "*". Both halves of the
 // API depend on that, so it is set once here.
+// Security headers before anything else answers. The API serves JSON to a
+// separate origin, so the browser-facing directives that matter are the ones
+// that stop a response being framed or sniffed into something executable.
+app.use(
+  helmet({
+    // No same-origin pages to protect, and it blocks cross-origin XHR that the
+    // client legitimately makes.
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: false,
+  }),
+);
+
 app.use(
   cors({
     origin: env.clientUrl,
@@ -64,6 +78,8 @@ app.use("/api/requests", requestRoutes);
 // ---- Fallbacks ----
 app.use(notFound);
 app.use(errorHandler);
+
+startCleanup();
 
 app.listen(env.port, () => {
   console.log(`Rophe server running on http://localhost:${env.port} [${env.nodeEnv}]`);

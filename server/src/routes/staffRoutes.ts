@@ -10,6 +10,7 @@ import {
   revoke,
 } from "../controllers/staffController";
 import { requireFrontDesk } from "../middleware/auth";
+import { rateLimit } from "../middleware/rateLimit";
 import { asyncHandler, validateBody } from "../middleware/validate";
 
 export const staffRoutes = Router();
@@ -23,11 +24,20 @@ staffRoutes.post(
   asyncHandler(invite),
 );
 
+// Public, so the invite-token space is reachable from outside. 32 random bytes
+// make walking it hopeless; this makes it pointless.
+const invitationLimit = rateLimit({
+  max: 20,
+  windowMs: 60_000,
+  message: "Too many attempts. Wait a minute and open your invitation again.",
+});
+
 // Public: the joiner is holding a token, not a session. The token is the
 // credential, and findByInviteToken checks it is unused and unexpired.
-staffRoutes.get("/invitations/:token", asyncHandler(getInvitation));
+staffRoutes.get("/invitations/:token", invitationLimit, asyncHandler(getInvitation));
 staffRoutes.post(
   "/invitations/:token/accept",
+  invitationLimit,
   validateBody(acceptSchema),
   asyncHandler(accept),
 );

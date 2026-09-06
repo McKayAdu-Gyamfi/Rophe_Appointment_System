@@ -7,6 +7,7 @@ import { emailSchema } from "../middleware/validate";
 import { destroyAllSessions } from "../services/sessionService";
 import { toDbRole, toStaffSession } from "../mappers/staffMapper";
 import { env } from "../config/env";
+import { recordAudit } from "../services/audit";
 
 // ---------------------------------------------------------------------------
 // Staff accounts and the invitation lifecycle.
@@ -145,6 +146,14 @@ export async function invite(req: Request, res: Response) {
         include: staffInclude,
       });
 
+      recordAudit({
+        actorUserId: req.auth!.userId,
+        action: "staff.invited",
+        entity: "User",
+        entityId: user.id,
+        meta: { email: user.email, role: user.role },
+      });
+
       // The only time the plaintext token leaves this server.
       res.status(201).json({ user: toStaffSession(user), inviteToken: token });
       return;
@@ -198,6 +207,9 @@ export async function accept(req: Request, res: Response) {
   // this moment. If anything does, it predates the credential and is void.
   await destroyAllSessions(user.id);
 
+  // No actor: the joiner has no account to act as until this moment.
+  recordAudit({ action: "staff.activated", entity: "User", entityId: user.id });
+
   // Deliberately not signing them in — the invite screen sends them to the
   // login form so the password they just chose is proved while they are still
   // at the desk.
@@ -220,6 +232,13 @@ export async function resend(req: Request, res: Response) {
     data: { inviteTokenHash, inviteExpiresAt, invitedAt: new Date() },
   });
 
+  recordAudit({
+    actorUserId: req.auth!.userId,
+    action: "staff.invitation_resent",
+    entity: "User",
+    entityId: user.id,
+  });
+
   res.json({ inviteToken: token });
 }
 
@@ -240,6 +259,15 @@ export async function revoke(req: Request, res: Response) {
 
   // Doctor.userId cascades, so the linked Doctor row goes with it.
   await prisma.user.delete({ where: { id: user.id } });
+
+  // The row is gone, so the log keeps enough to say who was cancelled.
+  recordAudit({
+    actorUserId: req.auth!.userId,
+    action: "staff.invitation_revoked",
+    entity: "User",
+    entityId: user.id,
+    meta: { email: user.email, fullName: user.fullName },
+  });
 
   res.status(204).end();
 }
