@@ -1,8 +1,39 @@
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { asyncHandler, validateBody, validateQuery, query, phoneSchema, emailSchema, channelSchema, dateOnlySchema } from "../middleware/validate";
 import { badRequest, notFound } from "../lib/httpError";
 import { toWirePatient, toWireAppointment } from "../mappers/recordMappers";
+
+/**
+ * A Ghanaian number, reduced to the part that identifies the subscriber.
+ *
+ * The clinic types numbers three ways — "+233 24 123 4567" off a card,
+ * "024 123 4567" off a phone, "0241234567" in a hurry — and all three are one
+ * number. Stripping punctuation is not enough: the international form carries
+ * a 233 the local form spells as a leading 0, so the digits genuinely differ
+ * and neither string contains the other. Dropping both leaves "241234567",
+ * which is what front desk is really searching for.
+ *
+ * Kept as one function used on both sides of the comparison, so the stored
+ * value and the typed value can never be normalised differently.
+ */
+export function nationalDigits(input: string): string {
+  return input
+    .replace(/\D/g, "")
+    .replace(/^233/, "")
+    .replace(/^0+/, "");
+}
+
+/**
+ * The same reduction, in SQL, for a stored column. A fixed fragment naming a
+ * column we control — the search text itself is still a bound parameter.
+ */
+function national(column: string) {
+  return Prisma.raw(
+    `regexp_replace(regexp_replace(regexp_replace(${column}, '\\D', '', 'g'), '^233', ''), '^0+', '')`,
+  );
+}
 
 const listQuerySchema = z.object({
   q: z.string().optional(),
@@ -21,23 +52,28 @@ export const list = [
 
     if (qParams.q) {
       const qLower = qParams.q.toLowerCase().trim();
-      const digits = qLower.replace(/\D/g, "");
 
       const searchConditions: any[] = [
         { fullName: { contains: qLower, mode: "insensitive" } },
         { email: { contains: qLower, mode: "insensitive" } },
       ];
 
-      if (digits.length > 0) {
-        // Find matching IDs via raw query for phone digits
+      const dialled = nationalDigits(qParams.q);
+
+      if (dialled.length >= 3) {
+        // Normalise on both sides, then substring-match. Comparing raw digits
+        // is what made the recorded case fail: a number saved from a business
+        // card as "+233 24 123 4567" and one dialled off a phone as
+        // "024 123 4567" are the same number, and neither contains the other.
         const matching = await prisma.$queryRaw<{ id: string }[]>`
           SELECT id FROM "Patient"
-          WHERE regexp_replace(phone, '\\D', '', 'g') LIKE ${'%' + digits + '%'}
+          WHERE ${national("phone")} LIKE ${`%${dialled}%`}
+             OR ("whatsappNumber" IS NOT NULL
+                 AND ${national('"whatsappNumber"')} LIKE ${`%${dialled}%`})
         `;
-        const phoneMatchingIds = matching.map(m => m.id);
 
-        if (phoneMatchingIds.length > 0) {
-          searchConditions.push({ id: { in: phoneMatchingIds } });
+        if (matching.length > 0) {
+          searchConditions.push({ id: { in: matching.map((m) => m.id) } });
         }
       }
 

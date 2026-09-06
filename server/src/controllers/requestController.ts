@@ -3,6 +3,14 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { badRequest, notFound } from "../lib/httpError";
 import { messageProvider } from "../services/messageProvider";
+import { sendMessage } from "../services/messaging";
+import { revokePortalTokens } from "../services/portal";
+import { toTimeKey } from "../mappers/datetime";
+import {
+  assertInsideAvailability,
+  assertNoOverlap,
+  windowsForDate,
+} from "../services/scheduling";
 import { toWirePatientRequest } from "../mappers/recordMappers";
 
 // The portal sends what the frontend types describe: a lowercase request type
@@ -40,14 +48,27 @@ export async function respond(req: Request, res: Response) {
     if (!pr) throw notFound("Request not found");
     if (pr.status !== "PENDING") throw badRequest(`Request is already ${pr.status}`);
 
-    // Track A (Appointments #10) missing integration:
-    // When #10 merges, call validateSlot() here for reschedule requests.
-    // if (status === "CONFIRMED" && pr.requestType === "RESCHEDULE") {
-    //   await validateSlot(tx, pr.requestedStartsAt);
-    // }
-
     if (status === "CONFIRMED") {
       if (pr.requestType === "RESCHEDULE" && pr.requestedStartsAt) {
+        // The patient asked for a time; nobody promised it was free. Front
+        // desk agreeing does not make the doctor available, so a confirmed
+        // reschedule goes through exactly the checks a staff booking does —
+        // otherwise this endpoint is the hole in #10's rules.
+        const { doctorId, durationMinutes } = pr.appointment;
+
+        assertInsideAvailability(
+          await windowsForDate(tx, doctorId, pr.requestedStartsAt),
+          toTimeKey(pr.requestedStartsAt),
+          durationMinutes,
+        );
+        await assertNoOverlap(
+          tx,
+          doctorId,
+          pr.requestedStartsAt,
+          durationMinutes,
+          pr.appointmentId,
+        );
+
         await tx.appointment.update({
           where: { id: pr.appointmentId },
           data: {
@@ -74,24 +95,55 @@ export async function respond(req: Request, res: Response) {
       }
     });
 
-    // Track B (Messages #11) missing integration:
-    // For now we just log out using the provider. Once templates exist, this should
-    // construct a real template render.
-    const messageBody = status === "CONFIRMED" 
-      ? `Your appointment request has been confirmed by the clinic.`
-      : `Unfortunately, the clinic declined your appointment request. Please contact us.`;
-    
-    messageProvider.send({
-      channel: pr.appointment.patient.preferredChannel,
-      to: pr.appointment.patient.preferredChannel === "EMAIL" ? (pr.appointment.patient.email || "") : pr.appointment.patient.phone,
-      body: messageBody,
-      subject: "Appointment Update"
-    }).catch(err => {
-      console.error("[RequestController] Failed to send decision message", err);
-    });
-
-    return updatedPr;
+    return { updatedPr, pr };
   });
 
-  res.json(toWirePatientRequest(patientRequest));
+  const { updatedPr, pr } = patientRequest;
+
+  // Outside the transaction: the decision is made either way, and a provider
+  // outage must not roll back an appointment the patient has been moved to.
+  if (status === "CONFIRMED" && pr.requestType === "RESCHEDULE") {
+    // A confirmed reschedule is a new confirmed time, so it goes out through
+    // the clinic's own confirmation wording — rendered, logged, and carrying a
+    // fresh portal link for the new date.
+    await sendMessage({
+      patientId: pr.appointment.patientId,
+      appointmentId: pr.appointmentId,
+      type: "CONFIRMATION",
+    }).catch((error) => {
+      console.error("[requests] Confirmation message failed", error);
+    });
+  } else {
+    // A declined request and a confirmed cancellation both still have to reach
+    // the patient — a silent decline leaves someone expecting an answer. There
+    // is no MessageType for "we answered your request", so this goes straight
+    // to the provider and is NOT in the message log. Giving the clinic control
+    // of this wording needs a new template type and a migration; raised rather
+    // than invented here.
+    const body =
+      status === "CONFIRMED"
+        ? "Your appointment has been cancelled as requested."
+        : "The clinic could not action your appointment request. Please call us.";
+
+    void messageProvider
+      .send({
+        channel: pr.appointment.patient.preferredChannel,
+        to:
+          pr.appointment.patient.preferredChannel === "EMAIL"
+            ? pr.appointment.patient.email || pr.appointment.patient.phone
+            : pr.appointment.patient.phone,
+        body,
+        subject: "Appointment update",
+      })
+      .catch((error) => {
+        console.error("[requests] Decision message failed", error);
+      });
+  }
+
+  // A cancelled visit's link is a credential for something not happening.
+  if (status === "CONFIRMED" && pr.requestType === "CANCELLATION") {
+    await revokePortalTokens(pr.appointmentId);
+  }
+
+  res.json(toWirePatientRequest(updatedPr));
 }
