@@ -13,6 +13,7 @@ import {
 import { appointmentStatusCodec } from "../mappers/enums";
 import { toInstant } from "../mappers/datetime";
 import { toWireAppointment } from "../mappers/recordMappers";
+import { sendMessage } from "../services/messaging";
 import {
   assertInsideAvailability,
   assertNoOverlap,
@@ -194,6 +195,17 @@ export async function book(req: Request, res: Response) {
       },
       include: withType,
     });
+  });
+
+  // Outside the transaction on purpose: the appointment is booked either way,
+  // and a provider outage must not roll back a slot the patient now holds.
+  // Front desk sees the failure in the message log.
+  await sendMessage({
+    patientId: appointment.patientId,
+    appointmentId: appointment.id,
+    type: "CONFIRMATION",
+  }).catch((error) => {
+    console.error("[appointments] Confirmation message failed", error);
   });
 
   res.status(201).json(toWireAppointment(appointment));

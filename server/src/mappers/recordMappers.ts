@@ -17,6 +17,7 @@ import type {
   AvailabilityException,
   ClinicSettings,
   DoctorAvailability,
+  Message,
   MessageTemplate,
   Patient,
   PatientRequest,
@@ -25,6 +26,7 @@ import type {
 import {
   appointmentStatusCodec,
   channelCodec,
+  deliveryStatusCodec,
   messageTypeCodec,
   requestStatusCodec,
   requestTypeCodec,
@@ -129,6 +131,27 @@ export function toWireTemplate(template: TemplateWithRevisions) {
     // `history`, newest first — template-editor.tsx reads .length on this
     // unconditionally, so it must always be an array.
     history: template.revisions.map(toWireRevision),
+  };
+}
+
+// --- Messages --------------------------------------------------------------
+
+/**
+ * `contentPreview` on the wire is `body` in the table: the text that actually
+ * went out, rendered at send time. It is deliberately not a pointer to a
+ * template — editing the wording must never rewrite what a patient was
+ * already sent.
+ */
+export function toWireMessage(message: Message) {
+  return {
+    id: message.id,
+    patientId: message.patientId,
+    appointmentId: message.appointmentId ?? undefined,
+    channel: channelCodec.toWire(message.channel),
+    type: messageTypeCodec.toWire(message.type),
+    sentAt: message.sentAt.toISOString(),
+    deliveryStatus: deliveryStatusCodec.toWire(message.deliveryStatus),
+    contentPreview: message.body,
   };
 }
 

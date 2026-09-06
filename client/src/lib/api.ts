@@ -3,6 +3,7 @@ import type {
   Appointment,
   AppointmentStatus,
   Channel,
+  DeliveryStatus,
   Message,
   MessageTemplate,
   MessageType,
@@ -181,8 +182,19 @@ export async function updateAppointmentStatus(
 
 // --- Messages -------------------------------------------------
 
-export async function getMessages(): Promise<Message[]> {
-  return request<Message[]>("/messages");
+export interface MessageFilters {
+  channel?: Channel;
+  type?: MessageType;
+  deliveryStatus?: DeliveryStatus;
+  patientId?: string;
+}
+
+export async function getMessages(filters: MessageFilters = {}): Promise<Message[]> {
+  const params = new URLSearchParams(
+    Object.entries(filters).filter(([, value]) => value !== undefined) as [string, string][],
+  );
+  const qs = params.toString();
+  return request<Message[]>(`/messages${qs ? `?${qs}` : ""}`);
 }
 
 let messageInterval: ReturnType<typeof setInterval> | null = null;
@@ -209,6 +221,11 @@ export interface SendMessageInput {
   appointmentId?: string;
   channel: Channel;
   type: MessageType;
+  /**
+   * Ignored by the API. The server renders the clinic's current template and
+   * logs that, so what the message log shows is what actually went out rather
+   * than what a client claimed it sent.
+   */
   contentPreview: string;
 }
 

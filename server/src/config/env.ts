@@ -69,4 +69,11 @@ export const env = {
    * whole application works end to end before any provider contract exists.
    */
   messageProvider: process.env.MESSAGE_PROVIDER?.trim() || "noop",
+
+  /**
+   * Shared secret the delivery webhook must present. The callback endpoint is
+   * public, so without this anybody who can reach it can mark the clinic's
+   * messages delivered. Unset locally; set in every deployed environment.
+   */
+  messageWebhookSecret: process.env.MESSAGE_WEBHOOK_SECRET?.trim() || "",
 } as const;

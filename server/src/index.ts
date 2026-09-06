@@ -6,6 +6,8 @@ import { authRoutes } from "./routes/authRoutes";
 import { doctorRoutes } from "./routes/doctorRoutes";
 import { staffRoutes } from "./routes/staffRoutes";
 import { appointmentRoutes } from "./routes/appointmentRoutes";
+import { messageRoutes } from "./routes/messageRoutes";
+import { webhookRoutes } from "./routes/webhookRoutes";
 import { appointmentTypeRoutes } from "./routes/appointmentTypeRoutes";
 import { clinicSettingsRoutes } from "./routes/clinicSettingsRoutes";
 import { patientRoutes } from "./routes/patientRoutes";
@@ -50,7 +52,9 @@ app.use("/api/appointments", appointmentRoutes);
 app.use("/api/appointment-types", appointmentTypeRoutes);
 app.use("/api/clinic-settings", clinicSettingsRoutes);
 app.use("/api/patients", patientRoutes);
+app.use("/api/messages", messageRoutes);
 app.use("/api/templates", templateRoutes);
+app.use("/api/webhooks", webhookRoutes);
 app.use("/api/requests", requestRoutes);
 
 // ---- Fallbacks ----
