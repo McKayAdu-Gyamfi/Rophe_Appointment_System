@@ -5,6 +5,7 @@ services:
     rootDir: server
     buildCommand: npm ci && npm run prisma:generate && npx prisma migrate deploy && npm run build
     startCommand: npm run start
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
@@ -20,6 +21,15 @@ services:
         generateValue: true
       - key: MESSAGE_PROVIDER
         value: noop
+      # The delivery webhook is public — this secret is the only thing that
+      # stops anyone marking the clinic's messages delivered. Generated per
+      # environment; the same value goes in the provider's dashboard.
+      - key: MESSAGE_WEBHOOK_SECRET
+        generateValue: true
+      - key: SESSION_DAYS
+        value: 7
+      - key: INVITE_DAYS
+        value: 7
 
 databases:
   - name: rophe-db
