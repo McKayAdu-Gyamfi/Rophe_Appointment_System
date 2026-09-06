@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -20,8 +20,14 @@ import {
   UserRoundSearch,
   Clock3,
 } from "lucide-react";
-import { getAppointments, getPatient, getPatientVisitSummary, getClinicSettings } from "@/lib/api";
-import type { Appointment, Patient, ClinicSettings } from "@/lib/types";
+import {
+  getAppointments,
+  getDoctors,
+  getPatient,
+  getPatientVisitSummary,
+  getClinicSettings,
+} from "@/lib/api";
+import type { Appointment, Doctor, Patient, ClinicSettings } from "@/lib/types";
 import {
   APPOINTMENT_STATUS_STYLES,
   CHANNEL_STYLES,
@@ -47,20 +53,23 @@ export default function PatientDetailPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [summary, setSummary] = useState<PatientVisitSummary | undefined>();
   const [settings, setSettings] = useState<ClinicSettings | null>(null);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const [p, appts, visitSummary, clinicSettings] = await Promise.all([
+      const [p, appts, docs, visitSummary, clinicSettings] = await Promise.all([
         getPatient(id),
-        getAppointments(),
+        getAppointments({ patientId: id }),
+        getDoctors(),
         getPatientVisitSummary(id),
         getClinicSettings(),
       ]);
       if (!active) return;
       setPatient(p);
-      setAppointments(appts.filter((a) => a.patientId === id));
+      setAppointments(appts);
+      setDoctors(docs);
       setSummary(visitSummary);
       setSettings(clinicSettings);
       setLoading(false);
@@ -69,6 +78,11 @@ export default function PatientDetailPage() {
       active = false;
     };
   }, [id]);
+
+  const doctorName = useCallback(
+    (doctorId: string) => doctors.find((d) => d.id === doctorId)?.fullName,
+    [doctors],
+  );
 
   const { upcoming, history } = useMemo(() => {
     const today = startOfDay(new Date()).getTime();
@@ -293,7 +307,7 @@ export default function PatientDetailPage() {
                 <ul className="divide-y divide-slate-200">
                   {upcoming.map((a) => (
                     <li key={a.id}>
-                      <AppointmentRow appt={a} />
+                      <AppointmentRow appt={a} doctorName={doctorName(a.doctorId)} />
                     </li>
                   ))}
                 </ul>
@@ -315,7 +329,7 @@ export default function PatientDetailPage() {
                 <ul className="divide-y divide-slate-200">
                   {history.map((a) => (
                     <li key={a.id}>
-                      <AppointmentRow appt={a} />
+                      <AppointmentRow appt={a} doctorName={doctorName(a.doctorId)} />
                     </li>
                   ))}
                 </ul>
@@ -358,7 +372,7 @@ function Field({
   );
 }
 
-function AppointmentRow({ appt }: { appt: Appointment }) {
+function AppointmentRow({ appt, doctorName }: { appt: Appointment; doctorName?: string }) {
   const style = APPOINTMENT_STATUS_STYLES[appt.status];
   return (
     <div className="flex items-center gap-3 px-4 py-3">
@@ -369,6 +383,7 @@ function AppointmentRow({ appt }: { appt: Appointment }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-slate-900">{appt.appointmentType}</p>
         <p className="truncate text-xs text-slate-500">
+          {doctorName ? `${doctorName} · ` : ""}
           {appt.durationMinutes} min
           {appt.notes ? ` · ${appt.notes}` : ""}
         </p>

@@ -78,6 +78,35 @@ function assertUsableWindows(windows: { startTime: string; endTime: string }[]) 
 
 // --- Weekly pattern --------------------------------------------------------
 
+/**
+ * Every doctor's hours in one call.
+ *
+ * The front-desk screens — the calendar, the booking form, the dashboard —
+ * need the whole clinic's week, and each row carries its doctorId so callers
+ * filter to whichever doctor they are showing. One request rather than one per
+ * doctor: the alternative gets slower every time the clinic hires.
+ */
+export async function getAllAvailability(_req: Request, res: Response) {
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+
+  const [windows, exceptions] = await Promise.all([
+    prisma.doctorAvailability.findMany({
+      where: { doctor: { active: true } },
+      orderBy: [{ doctorId: "asc" }, { dayOfWeek: "asc" }, { startTime: "asc" }],
+    }),
+    prisma.availabilityException.findMany({
+      where: { doctor: { active: true }, date: { gte: today } },
+      orderBy: { date: "asc" },
+    }),
+  ]);
+
+  res.json({
+    windows: windows.map(toWireAvailability),
+    exceptions: exceptions.map(toWireException),
+  });
+}
+
 export async function getAvailability(req: Request, res: Response) {
   const doctorId = scopedDoctorId(req);
   await requireDoctor(doctorId);

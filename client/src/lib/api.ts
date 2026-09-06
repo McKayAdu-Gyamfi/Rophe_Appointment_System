@@ -403,6 +403,19 @@ export async function getDoctorAvailability(doctorId = "me"): Promise<DoctorAvai
   return windows;
 }
 
+/**
+ * Every active doctor's hours, for the front-desk screens that show the whole
+ * clinic. Each window carries its doctorId — filter before handing them to
+ * lib/schedule, whose helpers are per-doctor by design.
+ */
+export async function getClinicAvailability(): Promise<DoctorAvailability[]> {
+  const { windows } = await request<{
+    windows: DoctorAvailability[];
+    exceptions: AvailabilityException[];
+  }>("/doctors/availability");
+  return windows;
+}
+
 export async function getDoctorExceptions(doctorId: string): Promise<AvailabilityException[]> {
   const { exceptions } = await request<{
     windows: DoctorAvailability[];

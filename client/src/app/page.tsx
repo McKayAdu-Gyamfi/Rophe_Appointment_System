@@ -10,7 +10,7 @@ import {
   getMessages,
   getPatients,
   sendMessage,
-  getDoctorAvailability,
+  getClinicAvailability,
   getAppointmentTypes,
   getClinicSettings,
 } from "@/lib/api";
@@ -73,7 +73,7 @@ export default function DashboardPage() {
         getPatients(),
         getMessages(),
         getDoctors(),
-        getDoctorAvailability(),
+        getClinicAvailability(),
         getAppointmentTypes(),
         getClinicSettings(),
       ]);
@@ -331,7 +331,7 @@ export default function DashboardPage() {
           />
           {config && (
             <ClinicSchedulePanel
-              doctor={doctors[0]}
+              doctors={doctors}
               availability={availability}
               appointments={appointments}
               config={config}

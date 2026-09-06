@@ -15,13 +15,11 @@ import {
   UsersRound,
 } from "lucide-react";
 import {
-  getDoctors,
-  getMessageTemplates,
   getPatientRecalls,
   sendMessage,
   type RecallEntry,
 } from "@/lib/api";
-import type { Doctor, MessageTemplate } from "@/lib/types";
+
 import {
   LAPSING_MONTHS,
   RECALL_COOLDOWN_DAYS,
@@ -34,7 +32,6 @@ import {
 } from "@/lib/visits";
 import { CHANNEL_STYLES, RECALL_STATE_STYLES } from "@/lib/status-styles";
 import { fmtDate, fmtRelative, initials } from "@/lib/format";
-import { renderTemplate } from "@/lib/templates";
 import { useRole } from "@/lib/role-context";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { cn } from "@/lib/utils";
@@ -77,7 +74,7 @@ const REASON_FILTERS: { value: "all" | RecallReason; label: string }[] = [
 
 /** Everything the screen reads. Shared by the first load and every refresh. */
 function fetchRecallData() {
-  return Promise.all([getPatientRecalls(), getMessageTemplates(), getDoctors()]);
+  return Promise.all([getPatientRecalls()]);
 }
 
 function digits(value: string): string {
@@ -107,8 +104,6 @@ export default function RecallsPage() {
   const canAct = role === "front-desk";
 
   const [entries, setEntries] = useState<RecallEntry[]>([]);
-  const [templates, setTemplates] = useState<MessageTemplate[]>([]);
-  const [doctor, setDoctor] = useState<Doctor | undefined>();
   const [loading, setLoading] = useState(true);
 
   const [tab, setTab] = useState<Tab>("due");
@@ -122,31 +117,22 @@ export default function RecallsPage() {
   // patient from "due" to "contacted", so the list has to come back through
   // the same join rather than be patched in place.
   const refresh = useCallback(async () => {
-    const [recalls, tpls, docs] = await fetchRecallData();
+    const [recalls] = await fetchRecallData();
     setEntries(recalls);
-    setTemplates(tpls);
-    setDoctor(docs[0]);
   }, []);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const [recalls, tpls, docs] = await fetchRecallData();
+      const [recalls] = await fetchRecallData();
       if (!active) return;
       setEntries(recalls);
-      setTemplates(tpls);
-      setDoctor(docs[0]);
       setLoading(false);
     })();
     return () => {
       active = false;
     };
   }, []);
-
-  const recallTemplate = useMemo(
-    () => templates.find((t) => t.type === "recall"),
-    [templates],
-  );
 
   const counts = useMemo(() => {
     let due = 0;
@@ -224,27 +210,22 @@ export default function RecallsPage() {
    * written here — the whole point of the templates screen is that staff can
    * change what these say without a deploy.
    */
-  const sendRecall = useCallback(
-    async (entry: RecallEntry) => {
-      const { patient, summary } = entry;
-      const body = recallTemplate
-        ? renderTemplate(recallTemplate.body, {
-            patient,
-            doctor,
-            lastVisitDate: summary.lastVisit?.date,
-          })
-        : `Hello ${patient.fullName.split(" ")[0]}, it has been a while since your last visit. Call the clinic to book a time.`;
+  const sendRecall = useCallback(async (entry: RecallEntry) => {
+    const { patient } = entry;
 
-      await sendMessage({
-        patientId: patient.id,
-        channel: patient.preferredChannel,
-        type: "recall",
-        contentPreview: body,
-      });
-      return body;
-    },
-    [recallTemplate, doctor],
-  );
+    // The API renders the clinic's current recall template against this
+    // patient's record and logs what it sent. Report that back rather than a
+    // second, locally rendered guess at the same text — a recall is not tied
+    // to an appointment, so there is no one clinician to render {{doctor}}
+    // from here anyway.
+    const message = await sendMessage({
+      patientId: patient.id,
+      channel: patient.preferredChannel,
+      type: "recall",
+      contentPreview: "",
+    });
+    return message.contentPreview;
+  }, []);
 
   const handleSendOne = useCallback(
     async (entry: RecallEntry) => {

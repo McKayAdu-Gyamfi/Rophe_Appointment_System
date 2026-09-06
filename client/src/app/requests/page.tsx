@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import {
   getAppointments,
-  getDoctorAvailability,
+  getClinicAvailability,
   getPatients,
   getPendingRequests,
   respondToRequest,
@@ -38,7 +38,7 @@ import {
   REQUEST_TYPE_STYLES,
 } from "@/lib/status-styles";
 import { fmtDate, fmtLongDate, fmtTime, initials } from "@/lib/format";
-import { buildDaySlots } from "@/lib/schedule";
+import { buildDaySlots, forDoctor } from "@/lib/schedule";
 import { useRole } from "@/lib/role-context";
 import { cn } from "@/lib/utils";
 
@@ -61,7 +61,7 @@ export default function PendingRequestsPage() {
         getPendingRequests(),
         getAppointments(),
         getPatients(),
-        getDoctorAvailability(),
+        getClinicAvailability(),
         getAppointmentTypes(),
         getClinicSettings(),
       ]);
@@ -102,12 +102,23 @@ export default function PendingRequestsPage() {
       if (request.requestType !== "reschedule") return null;
       if (!request.requestedDate || !request.requestedTime) return null;
 
-      const date = new Date(`${request.requestedDate}T00:00:00`);
-      const others = appointments.filter((a) => a.id !== request.appointmentId);
       if (!config) return null;
-      const slot = buildDaySlots(date, others, availability, config).find(
-        (s) => s.time === request.requestedTime,
+
+      // The clash is with the clinician this appointment is already booked
+      // with — a slot that is free in somebody else's week is not free here.
+      const booked = appointments.find((a) => a.id === request.appointmentId);
+      if (!booked) return null;
+
+      const date = new Date(`${request.requestedDate}T00:00:00`);
+      const others = appointments.filter(
+        (a) => a.id !== request.appointmentId && a.doctorId === booked.doctorId,
       );
+      const slot = buildDaySlots(
+        date,
+        others,
+        forDoctor(availability, booked.doctorId),
+        config,
+      ).find((s) => s.time === request.requestedTime);
 
       if (!slot) return "That time is outside clinic hours.";
       if (!slot.available) return "The doctor isn't available at that time.";

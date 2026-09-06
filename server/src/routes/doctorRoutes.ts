@@ -4,6 +4,7 @@ import {
   createException,
   createExceptionSchema,
   deleteException,
+  getAllAvailability,
   getAvailability,
   setDay,
   setDaySchema,
@@ -14,6 +15,9 @@ import { asyncHandler, validateBody } from "../middleware/validate";
 const router = Router();
 
 router.get("/", requireAuth, asyncHandler(listDoctors));
+// Before "/:id": "availability" is a literal, not a doctor id.
+router.get("/availability", requireAuth, asyncHandler(getAllAvailability));
+
 router.get("/:id", requireAuth, asyncHandler(getDoctor));
 router.patch("/:id", requireFrontDesk, asyncHandler(updateDoctor));
 
