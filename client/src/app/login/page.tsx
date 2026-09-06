@@ -12,12 +12,9 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
-import { getStaffUsers } from "@/lib/api";
-import type { StaffSession } from "@/lib/types";
 import { CLINIC } from "@/lib/clinic";
 import { LANDING_BY_ROLE } from "@/lib/nav";
 import { useAuth } from "@/lib/role-context";
-import { cn } from "@/lib/utils";
 
 export default function LoginPage() {
   const router = useRouter();

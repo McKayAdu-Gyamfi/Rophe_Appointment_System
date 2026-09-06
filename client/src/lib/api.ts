@@ -3,7 +3,6 @@ import type {
   Appointment,
   AppointmentStatus,
   Channel,
-  DeliveryStatus,
   Message,
   MessageTemplate,
   MessageType,
@@ -19,7 +18,12 @@ import type { PatientVisitSummary } from "./visits";
 
 // --- Settings ------------------------------------------------------------
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+
+/** The message from a thrown API error, without asserting the error's type. */
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Something went wrong.";
+}
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_URL}${path}`;
@@ -37,7 +41,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!res.ok) {
     let message = `API error: ${res.status}`;
     try {
-      const data = await res.json();
+      const data = (await res.json()) as { error?: { code?: string; message?: string } };
       if (data?.error?.message) {
         message = data.error.message;
       }
@@ -281,7 +285,7 @@ export async function respondToRequest(
 ): Promise<PatientRequest | undefined> {
   return request<PatientRequest>(`/requests/${id}`, {
     method: "PATCH",
-    body: JSON.stringify({ status: decision.toUpperCase() }),
+    body: JSON.stringify({ status: decision }),
   });
 }
 
@@ -317,13 +321,14 @@ export type SignInResult =
 
 export async function signIn(input: SignInInput): Promise<SignInResult> {
   try {
-    const session = await request<StaffSession>("/auth/login", {
+    // Both session endpoints wrap their payload as { session }.
+    const { session } = await request<{ session: StaffSession }>("/auth/login", {
       method: "POST",
       body: JSON.stringify(input),
     });
     return { ok: true, session };
-  } catch (error: any) {
-    return { ok: false, error: error.message };
+  } catch (error: unknown) {
+    return { ok: false, error: errorMessage(error) };
   }
 }
 
@@ -355,8 +360,8 @@ export async function inviteStaffUser(input: InviteStaffInput): Promise<InviteSt
       body: JSON.stringify(input),
     });
     return { ok: true, user: data.user, inviteToken: data.inviteToken };
-  } catch (error: any) {
-    return { ok: false, error: error.message };
+  } catch (error: unknown) {
+    return { ok: false, error: errorMessage(error) };
   }
 }
 
@@ -378,8 +383,8 @@ export async function acceptStaffInvitation(
       body: JSON.stringify({ token, password }),
     });
     return { ok: true, session };
-  } catch (error: any) {
-    return { ok: false, error: error.message };
+  } catch (error: unknown) {
+    return { ok: false, error: errorMessage(error) };
   }
 }
 
@@ -387,8 +392,8 @@ export async function revokeStaffInvitation(id: string): Promise<{ ok: boolean; 
   try {
     await request(`/staff/${id}/invitation`, { method: "DELETE" });
     return { ok: true };
-  } catch (error: any) {
-    return { ok: false, error: error.message };
+  } catch (error: unknown) {
+    return { ok: false, error: errorMessage(error) };
   }
 }
 
@@ -400,17 +405,17 @@ export async function resendStaffInvitation(
       method: "POST",
     });
     return { ok: true, inviteToken: data.inviteToken };
-  } catch (error: any) {
-    return { ok: false, error: error.message };
+  } catch (error: unknown) {
+    return { ok: false, error: errorMessage(error) };
   }
 }
 
 export async function getMe(): Promise<{ ok: true; session: StaffSession } | { ok: false; error: string }> {
   try {
-    const session = await request<StaffSession>("/auth/me");
+    const { session } = await request<{ session: StaffSession }>("/auth/me");
     return { ok: true, session };
-  } catch (error: any) {
-    return { ok: false, error: error.message };
+  } catch (error: unknown) {
+    return { ok: false, error: errorMessage(error) };
   }
 }
 

@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { asyncHandler, validateBody, validateQuery, query, phoneSchema, emailSchema, channelSchema, dateOnlySchema } from "../middleware/validate";
-import { badRequest } from "../lib/httpError";
+import { badRequest, notFound } from "../lib/httpError";
+import { toWirePatient, toWireAppointment } from "../mappers/recordMappers";
 
 const listQuerySchema = z.object({
   q: z.string().optional(),
@@ -49,7 +50,7 @@ export const list = [
       take: 50,
     });
 
-    res.json(patients);
+    res.json(patients.map(toWirePatient));
   }),
 ];
 
@@ -59,17 +60,20 @@ export const get = asyncHandler(async (req, res) => {
     where: { id },
     include: {
       appointments: {
+        include: { type: true },
         orderBy: { startsAt: "desc" },
       },
     },
   });
 
   if (!patient) {
-    res.status(404).json({ error: "Patient not found" });
-    return;
+    throw notFound("That patient record could not be found.");
   }
 
-  res.json(patient);
+  res.json({
+    ...toWirePatient(patient),
+    appointments: patient.appointments.map(toWireAppointment),
+  });
 });
 
 const createSchema = z.object({
@@ -78,6 +82,8 @@ const createSchema = z.object({
   whatsappNumber: z.string().optional().nullable(),
   email: z.string().email("Invalid email").optional().nullable().or(z.literal("")),
   dateOfBirth: dateOnlySchema.optional().nullable().or(z.literal("")),
+    // The default is the parsed (database) value: zod applies it in place of
+  // the transform when the field is absent.
   preferredChannel: channelSchema.default("WHATSAPP"),
   notes: z.string().optional().nullable(),
   registeredAt: z.string().datetime().optional(),
@@ -112,7 +118,7 @@ export const create = [
       },
     });
 
-    res.status(201).json(patient);
+    res.status(201).json(toWirePatient(patient));
   }),
 ];
 
@@ -135,16 +141,14 @@ export const update = [
 
     const existing = await prisma.patient.findUnique({ where: { id } });
     if (!existing) {
-      res.status(404).json({ error: "Patient not found" });
-      return;
+      throw notFound("That patient record could not be found.");
     }
 
     const nextEmail = data.email !== undefined ? (data.email === "" ? null : data.email) : existing.email;
     const nextChannel = data.preferredChannel !== undefined ? data.preferredChannel : existing.preferredChannel;
 
     if (nextChannel === "EMAIL" && !nextEmail) {
-      res.status(400).json({ error: { message: "An email address is required if EMAIL is the preferred channel." } });
-      return;
+      throw badRequest("Add an email address before making email the preferred channel.");
     }
 
     const updateData: any = { ...data };
@@ -157,6 +161,6 @@ export const update = [
       data: updateData,
     });
 
-    res.json(patient);
+    res.json(toWirePatient(patient));
   }),
 ];

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { asyncHandler, validateBody, timeSchema } from "../middleware/validate";
+import { toWireClinicSettings } from "../mappers/recordMappers";
 
 export const getSettings = asyncHandler(async (_req, res) => {
   let settings = await prisma.clinicSettings.findUnique({
@@ -13,7 +14,7 @@ export const getSettings = asyncHandler(async (_req, res) => {
     });
   }
 
-  res.json(settings);
+  res.json(toWireClinicSettings(settings));
 });
 
 const updateSchema = z.object({
@@ -36,6 +37,6 @@ export const updateSettings = [
       update: data,
       create: { id: "clinic", ...data },
     });
-    res.json(settings);
+    res.json(toWireClinicSettings(settings));
   }),
 ];

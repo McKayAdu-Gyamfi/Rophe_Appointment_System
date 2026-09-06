@@ -4,29 +4,34 @@ import { prisma } from "../lib/prisma";
 import { badRequest, notFound, forbidden } from "../lib/httpError";
 import { hashToken } from "../lib/crypto";
 import { messageProvider } from "../services/messageProvider";
+import { requestTypeCodec } from "../mappers/enums";
+import { toWirePatientRequest } from "../mappers/recordMappers";
+import { toInstant } from "../mappers/datetime";
+import { dateOnlySchema, timeSchema } from "../middleware/validate";
 
+// The portal sends what the frontend types describe: a lowercase request type
+// and a separate date and clock time. The instant is assembled here.
 export const createRequestSchema = z.object({
-  requestType: z.enum(["RESCHEDULE", "CANCELLATION"]),
-  requestedStartsAt: z.string().datetime().optional(),
+  requestType: z.enum(requestTypeCodec.wireValues).transform((v) => requestTypeCodec.toDb(v)),
+  requestedDate: dateOnlySchema.optional(),
+  requestedTime: timeSchema.optional(),
   reason: z.string().optional(),
 });
 
+/** Only a decision — a request cannot be moved back to pending. */
 export const respondRequestSchema = z.object({
-  status: z.enum(["CONFIRMED", "DECLINED"]),
+  status: z.enum(["confirmed", "declined"]).transform((v) =>
+    v === "confirmed" ? ("CONFIRMED" as const) : ("DECLINED" as const),
+  ),
 });
 
 export async function list(req: Request, res: Response) {
+  // The requests screen resolves patients and appointments from its own
+  // fetches, so the row itself is all that crosses the wire.
   const requests = await prisma.patientRequest.findMany({
     orderBy: { createdAt: "desc" },
-    include: {
-      appointment: true,
-      patient: true,
-      respondedBy: {
-        select: { id: true, fullName: true, role: true }
-      }
-    }
   });
-  res.json(requests);
+  res.json(requests.map(toWirePatientRequest));
 }
 
 export async function create(req: Request, res: Response) {
@@ -51,11 +56,16 @@ export async function create(req: Request, res: Response) {
     throw forbidden("Portal token expired or revoked");
   }
 
-  const { requestType, requestedStartsAt, reason } = req.body as z.infer<typeof createRequestSchema>;
+  const { requestType, requestedDate, requestedTime, reason } = req.body as z.infer<
+    typeof createRequestSchema
+  >;
 
-  if (requestType === "RESCHEDULE" && !requestedStartsAt) {
-    throw badRequest("A reschedule request requires a requestedStartsAt time.");
+  if (requestType === "RESCHEDULE" && (!requestedDate || !requestedTime)) {
+    throw badRequest("Choose a new date and time for a reschedule request.");
   }
+
+  const requestedStartsAt =
+    requestedDate && requestedTime ? toInstant(requestedDate, requestedTime) : null;
 
   const patientRequest = await prisma.$transaction(async (tx) => {
     // Record usage
@@ -69,14 +79,14 @@ export async function create(req: Request, res: Response) {
         appointmentId: portalToken.appointmentId,
         patientId: portalToken.appointment.patientId,
         requestType,
-        requestedStartsAt: requestedStartsAt ? new Date(requestedStartsAt) : null,
+        requestedStartsAt,
         reason,
         status: "PENDING",
       }
     });
   });
 
-  res.status(201).json(patientRequest);
+  res.status(201).json(toWirePatientRequest(patientRequest));
 }
 
 export async function respond(req: Request, res: Response) {
@@ -149,5 +159,5 @@ export async function respond(req: Request, res: Response) {
     return updatedPr;
   });
 
-  res.json(patientRequest);
+  res.json(toWirePatientRequest(patientRequest));
 }

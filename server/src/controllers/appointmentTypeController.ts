@@ -1,13 +1,14 @@
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { asyncHandler, validateBody } from "../middleware/validate";
+import { toWireAppointmentType } from "../mappers/recordMappers";
 
 export const list = asyncHandler(async (_req, res) => {
   const types = await prisma.appointmentType.findMany({
     where: { active: true },
     orderBy: { sortOrder: "asc" },
   });
-  res.json(types);
+  res.json(types.map(toWireAppointmentType));
 });
 
 const createSchema = z.object({
@@ -21,7 +22,7 @@ export const create = [
   asyncHandler(async (req, res) => {
     const data = req.body as z.infer<typeof createSchema>;
     const type = await prisma.appointmentType.create({ data });
-    res.status(201).json(type);
+    res.status(201).json(toWireAppointmentType(type));
   }),
 ];
 
@@ -29,19 +30,19 @@ const updateSchema = z.object({
   name: z.string().min(1, "Name is required").optional(),
   durationMinutes: z.number().int().positive().optional(),
   sortOrder: z.number().int().optional(),
-  active: z.boolean().optional(),
+  isActive: z.boolean().optional(),
 });
 
 export const update = [
   validateBody(updateSchema),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const data = req.body as z.infer<typeof updateSchema>;
+    const { isActive, ...rest } = req.body as z.infer<typeof updateSchema>;
     const type = await prisma.appointmentType.update({
       where: { id },
-      data,
+      data: { ...rest, ...(isActive !== undefined && { active: isActive }) },
     });
-    res.json(type);
+    res.json(toWireAppointmentType(type));
   }),
 ];
 

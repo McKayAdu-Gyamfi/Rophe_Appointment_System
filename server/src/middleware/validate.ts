@@ -1,5 +1,6 @@
 import { NextFunction, Request, RequestHandler, Response } from "express";
 import { ZodType, z } from "zod";
+import { channelCodec } from "../mappers/enums";
 
 // ---------------------------------------------------------------------------
 // Validation, and the async wrapper that makes throwing safe.
@@ -94,4 +95,11 @@ export const dateOnlySchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-03-09.");
 
-export const channelSchema = z.enum(["WHATSAPP", "SMS", "EMAIL"]);
+/**
+ * Channels cross the wire in the frontend's spelling ("whatsapp"), and reach
+ * Prisma in the database's ("WHATSAPP"). Parsing here means a controller never
+ * sees the wire form, so it cannot forget to convert it.
+ */
+export const channelSchema = z
+  .enum(channelCodec.wireValues)
+  .transform((value) => channelCodec.toDb(value));

@@ -3,7 +3,8 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { badRequest, notFound } from "../lib/httpError";
 import { validateTemplate } from "../lib/templates";
-import { MessageType } from "@prisma/client";
+import { messageTypeCodec } from "../mappers/enums";
+import { toWireTemplate } from "../mappers/recordMappers";
 
 export const updateTemplateSchema = z.object({
   body: z.string().min(1),
@@ -19,18 +20,16 @@ export async function list(req: Request, res: Response) {
     },
     orderBy: { type: "asc" },
   });
-  res.json(templates);
+  res.json(templates.map(toWireTemplate));
 }
 
 export async function update(req: Request, res: Response) {
   const { type } = req.params;
   const { body, emailSubject } = req.body as z.infer<typeof updateTemplateSchema>;
 
-  if (!Object.values(MessageType).includes(type as MessageType)) {
-    throw badRequest(`Invalid template type: ${type}`);
-  }
+  const dbType = messageTypeCodec.toDb(type);
 
-  const issues = validateTemplate(type as MessageType, body, emailSubject);
+  const issues = validateTemplate(dbType, body, emailSubject);
   const errors = issues.filter((i) => i.level === "error");
   if (errors.length > 0) {
     throw badRequest(errors[0].message);
@@ -38,7 +37,7 @@ export async function update(req: Request, res: Response) {
 
   const updated = await prisma.$transaction(async (tx) => {
     const current = await tx.messageTemplate.findUnique({
-      where: { type: type as MessageType },
+      where: { type: dbType },
     });
 
     if (!current) {
@@ -72,7 +71,7 @@ export async function update(req: Request, res: Response) {
     });
   });
 
-  res.json(updated);
+  res.json(toWireTemplate(updated));
 }
 
 export async function revert(req: Request, res: Response) {
@@ -83,13 +82,11 @@ export async function revert(req: Request, res: Response) {
     throw badRequest("Version must be a number");
   }
 
-  if (!Object.values(MessageType).includes(type as MessageType)) {
-    throw badRequest(`Invalid template type: ${type}`);
-  }
+  const dbType = messageTypeCodec.toDb(type);
 
   const reverted = await prisma.$transaction(async (tx) => {
     const current = await tx.messageTemplate.findUnique({
-      where: { type: type as MessageType },
+      where: { type: dbType },
     });
 
     if (!current) {
@@ -136,5 +133,5 @@ export async function revert(req: Request, res: Response) {
     });
   });
 
-  res.json(reverted);
+  res.json(toWireTemplate(reverted));
 }
