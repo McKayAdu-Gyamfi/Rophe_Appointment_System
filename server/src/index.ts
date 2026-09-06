@@ -5,6 +5,7 @@ import { env } from "./config/env";
 import { authRoutes } from "./routes/authRoutes";
 import { doctorRoutes } from "./routes/doctorRoutes";
 import { staffRoutes } from "./routes/staffRoutes";
+import { appointmentRoutes } from "./routes/appointmentRoutes";
 import { appointmentTypeRoutes } from "./routes/appointmentTypeRoutes";
 import { clinicSettingsRoutes } from "./routes/clinicSettingsRoutes";
 import { patientRoutes } from "./routes/patientRoutes";
@@ -45,6 +46,7 @@ app.get("/api/health", (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/staff", staffRoutes);
 app.use("/api/doctors", doctorRoutes);
+app.use("/api/appointments", appointmentRoutes);
 app.use("/api/appointment-types", appointmentTypeRoutes);
 app.use("/api/clinic-settings", clinicSettingsRoutes);
 app.use("/api/patients", patientRoutes);

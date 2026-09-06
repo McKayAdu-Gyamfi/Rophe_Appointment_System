@@ -117,8 +117,26 @@ export interface BookAppointmentInput {
   notes?: string;
 }
 
-export async function getAppointments(): Promise<Appointment[]> {
-  return request<Appointment[]>("/appointments");
+export interface AppointmentFilters {
+  /** "YYYY-MM-DD", inclusive at both ends. */
+  from?: string;
+  to?: string;
+  doctorId?: string;
+  patientId?: string;
+  status?: AppointmentStatus;
+}
+
+/**
+ * Filters are optional and additive — calling with no arguments still returns
+ * everything the signed-in account may see. A doctor is scoped to their own
+ * diary by the server whatever is asked for.
+ */
+export async function getAppointments(filters: AppointmentFilters = {}): Promise<Appointment[]> {
+  const params = new URLSearchParams(
+    Object.entries(filters).filter(([, value]) => value !== undefined) as [string, string][],
+  );
+  const qs = params.toString();
+  return request<Appointment[]>(`/appointments${qs ? `?${qs}` : ""}`);
 }
 
 export async function getAppointment(id: string): Promise<Appointment | undefined> {
