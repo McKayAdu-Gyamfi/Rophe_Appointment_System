@@ -14,7 +14,9 @@
 import type {
   Appointment,
   AppointmentType,
+  AvailabilityException,
   ClinicSettings,
+  DoctorAvailability,
   MessageTemplate,
   Patient,
   PatientRequest,
@@ -127,6 +129,38 @@ export function toWireTemplate(template: TemplateWithRevisions) {
     // `history`, newest first — template-editor.tsx reads .length on this
     // unconditionally, so it must always be an array.
     history: template.revisions.map(toWireRevision),
+  };
+}
+
+// --- Availability ----------------------------------------------------------
+
+/**
+ * The frontend's DoctorAvailability carries an `isAvailable` flag; the table
+ * has no such column, because a window that exists is open and a day with no
+ * rows is closed. There is deliberately no stored `false` to keep in step with
+ * the rows around it, so the flag is re-added here as the constant it is —
+ * lib/schedule.ts filters on it.
+ */
+export function toWireAvailability(window: DoctorAvailability) {
+  return {
+    doctorId: window.doctorId,
+    dayOfWeek: window.dayOfWeek,
+    startTime: window.startTime,
+    endTime: window.endTime,
+    isAvailable: true as const,
+  };
+}
+
+/** A one-off change to a single date, overriding the weekly pattern. */
+export function toWireException(exception: AvailabilityException) {
+  return {
+    id: exception.id,
+    doctorId: exception.doctorId,
+    date: toDateKey(exception.date),
+    isClosed: exception.isClosed,
+    startTime: exception.startTime ?? undefined,
+    endTime: exception.endTime ?? undefined,
+    reason: exception.reason ?? undefined,
   };
 }
 

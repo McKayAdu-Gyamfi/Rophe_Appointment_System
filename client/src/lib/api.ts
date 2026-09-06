@@ -291,8 +291,37 @@ export async function respondToRequest(
 
 // --- Doctor availability --------------------------------------------------
 
+/** A single date that does not follow the weekly pattern. */
+export interface AvailabilityException {
+  id: string;
+  doctorId: string;
+  date: string; // ISO date
+  /** True = no hours at all. False = startTime/endTime replace the pattern. */
+  isClosed: boolean;
+  startTime?: string;
+  endTime?: string;
+  reason?: string;
+}
+
+/**
+ * The endpoint answers with the weekly pattern *and* the upcoming exceptions;
+ * this keeps returning just the windows, which is what the availability grid
+ * reads. Use getDoctorExceptions for the other half.
+ */
 export async function getDoctorAvailability(doctorId = "doc-1"): Promise<DoctorAvailability[]> {
-  return request<DoctorAvailability[]>(`/doctors/${doctorId}/availability`);
+  const { windows } = await request<{
+    windows: DoctorAvailability[];
+    exceptions: AvailabilityException[];
+  }>(`/doctors/${doctorId}/availability`);
+  return windows;
+}
+
+export async function getDoctorExceptions(doctorId: string): Promise<AvailabilityException[]> {
+  const { exceptions } = await request<{
+    windows: DoctorAvailability[];
+    exceptions: AvailabilityException[];
+  }>(`/doctors/${doctorId}/availability`);
+  return exceptions;
 }
 
 export async function setDoctorDayAvailability(
@@ -302,8 +331,36 @@ export async function setDoctorDayAvailability(
 ): Promise<DoctorAvailability[]> {
   return request<DoctorAvailability[]>(`/doctors/${doctorId}/availability/${dayOfWeek}`, {
     method: "PUT",
-    body: JSON.stringify({ windows }),
+    // Only the times are sent: the doctor and the day are in the path.
+    body: JSON.stringify({
+      windows: windows.map(({ startTime, endTime }) => ({ startTime, endTime })),
+    }),
   });
+}
+
+export interface CreateExceptionInput {
+  date: string;
+  isClosed?: boolean;
+  startTime?: string;
+  endTime?: string;
+  reason?: string;
+}
+
+export async function createDoctorException(
+  doctorId: string,
+  input: CreateExceptionInput,
+): Promise<AvailabilityException> {
+  return request<AvailabilityException>(`/doctors/${doctorId}/exceptions`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteDoctorException(
+  doctorId: string,
+  exceptionId: string,
+): Promise<void> {
+  await request(`/doctors/${doctorId}/exceptions/${exceptionId}`, { method: "DELETE" });
 }
 
 // --- Auth ------------------------------------------------------
