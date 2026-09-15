@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronDown, ExternalLink, LogIn, LogOut, Search } from "lucide-react";
+import { ChevronDown, ExternalLink, Loader2, LogIn, LogOut, Search } from "lucide-react";
+import { toast } from "sonner";
 import { CLINIC } from "@/lib/clinic";
 import { useAuth } from "@/lib/role-context";
 import { QUICK_ACTIONS_BY_ROLE, pageMetaFor } from "@/lib/nav";
@@ -25,6 +26,7 @@ export function TopBar() {
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   const meta = pageMetaFor(pathname);
@@ -37,10 +39,19 @@ export function TopBar() {
     buttonRef.current?.focus();
   }
 
-  function handleSignOut() {
-    setOpen(false);
-    signOut();
-    router.replace("/login");
+  // Wait for the server to end the session before leaving: the login page
+  // sends anyone it still thinks is signed in straight back into the app.
+  async function handleSignOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await signOut();
+      setOpen(false);
+      router.replace("/login");
+    } catch {
+      setSigningOut(false);
+      toast.error("Couldn't sign out. Check your connection and try again.");
+    }
   }
 
   return (
@@ -139,12 +150,17 @@ export function TopBar() {
                     role="menuitem"
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      handleSignOut();
+                      void handleSignOut();
                     }}
-                    className="flex w-full items-center gap-2.5 border-t border-slate-200 px-4 py-2.5 text-left text-sm text-slate-600 transition hover:bg-slate-50"
+                    disabled={signingOut}
+                    className="flex w-full items-center gap-2.5 border-t border-slate-200 px-4 py-2.5 text-left text-sm text-slate-600 transition hover:bg-slate-50 disabled:cursor-wait"
                   >
-                    <LogOut className="h-4 w-4 text-slate-400" />
-                    Sign out
+                    {signingOut ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+                    ) : (
+                      <LogOut className="h-4 w-4 text-slate-400" />
+                    )}
+                    {signingOut ? "Signing out…" : "Sign out"}
                   </button>
                 </div>
               )}

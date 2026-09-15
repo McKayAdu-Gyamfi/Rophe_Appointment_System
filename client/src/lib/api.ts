@@ -3,6 +3,7 @@ import type {
   Appointment,
   AppointmentStatus,
   Channel,
+  DeliveryStatus,
   Message,
   MessageTemplate,
   MessageType,
@@ -117,8 +118,26 @@ export interface BookAppointmentInput {
   notes?: string;
 }
 
-export async function getAppointments(): Promise<Appointment[]> {
-  return request<Appointment[]>("/appointments");
+export interface AppointmentFilters {
+  /** "YYYY-MM-DD", inclusive at both ends. */
+  from?: string;
+  to?: string;
+  doctorId?: string;
+  patientId?: string;
+  status?: AppointmentStatus;
+}
+
+/**
+ * Filters are optional and additive — calling with no arguments still returns
+ * everything the signed-in account may see. A doctor is scoped to their own
+ * diary by the server whatever is asked for.
+ */
+export async function getAppointments(filters: AppointmentFilters = {}): Promise<Appointment[]> {
+  const params = new URLSearchParams(
+    Object.entries(filters).filter(([, value]) => value !== undefined) as [string, string][],
+  );
+  const qs = params.toString();
+  return request<Appointment[]>(`/appointments${qs ? `?${qs}` : ""}`);
 }
 
 export async function getAppointment(id: string): Promise<Appointment | undefined> {
@@ -163,8 +182,19 @@ export async function updateAppointmentStatus(
 
 // --- Messages -------------------------------------------------
 
-export async function getMessages(): Promise<Message[]> {
-  return request<Message[]>("/messages");
+export interface MessageFilters {
+  channel?: Channel;
+  type?: MessageType;
+  deliveryStatus?: DeliveryStatus;
+  patientId?: string;
+}
+
+export async function getMessages(filters: MessageFilters = {}): Promise<Message[]> {
+  const params = new URLSearchParams(
+    Object.entries(filters).filter(([, value]) => value !== undefined) as [string, string][],
+  );
+  const qs = params.toString();
+  return request<Message[]>(`/messages${qs ? `?${qs}` : ""}`);
 }
 
 let messageInterval: ReturnType<typeof setInterval> | null = null;
@@ -191,6 +221,11 @@ export interface SendMessageInput {
   appointmentId?: string;
   channel: Channel;
   type: MessageType;
+  /**
+   * Ignored by the API. The server renders the clinic's current template and
+   * logs that, so what the message log shows is what actually went out rather
+   * than what a client claimed it sent.
+   */
   contentPreview: string;
 }
 
@@ -261,19 +296,67 @@ export async function getPendingRequests(): Promise<PatientRequest[]> {
   return request<PatientRequest[]>("/requests");
 }
 
+// --- Patient portal -------------------------------------------------------
+//
+// A patient has no account; the token in their link is the credential. It
+// names the appointment, so nothing here sends an appointmentId or patientId —
+// the server takes both from the token.
+
+export interface PortalView {
+  appointment: {
+    id: string;
+    appointmentType: string;
+    date: string;
+    time: string;
+    durationMinutes: number;
+    status: AppointmentStatus;
+  };
+  /** Name only — the page greets the patient, it does not show their record. */
+  patient: { fullName: string };
+  doctor: { fullName: string; specialty: string };
+  availability: DoctorAvailability[];
+  requests: PatientRequest[];
+  clinicSettings: ClinicSettings | null;
+  appointmentTypes: AppointmentTypeConfig[];
+}
+
+/**
+ * Mint a fresh patient link. Front desk work — the token comes back once, so
+ * this response is the only chance to copy it.
+ */
+export async function createPortalLink(
+  appointmentId: string,
+): Promise<{ token: string; url: string }> {
+  return request<{ token: string; url: string }>(`/appointments/${appointmentId}/portal-link`, {
+    method: "POST",
+  });
+}
+
+export async function getPortalAppointment(token: string): Promise<PortalView> {
+  return request<PortalView>(`/portal/${encodeURIComponent(token)}`);
+}
+
+export async function confirmPortalAppointment(
+  token: string,
+): Promise<{ status: AppointmentStatus }> {
+  return request<{ status: AppointmentStatus }>(
+    `/portal/${encodeURIComponent(token)}/confirm`,
+    { method: "POST" },
+  );
+}
+
 export interface CreatePatientRequestInput {
-  appointmentId: string;
-  patientId: string;
   requestType: PatientRequest["requestType"];
   requestedDate?: string;
   requestedTime?: string;
   reason?: string;
 }
 
-export async function createPatientRequest(
+export async function createPortalRequest(
+  token: string,
   input: CreatePatientRequestInput,
 ): Promise<PatientRequest> {
-  return request<PatientRequest>("/requests", {
+  return request<PatientRequest>(`/portal/${encodeURIComponent(token)}/requests`, {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -291,8 +374,54 @@ export async function respondToRequest(
 
 // --- Doctor availability --------------------------------------------------
 
-export async function getDoctorAvailability(doctorId = "doc-1"): Promise<DoctorAvailability[]> {
-  return request<DoctorAvailability[]>(`/doctors/${doctorId}/availability`);
+/** A single date that does not follow the weekly pattern. */
+export interface AvailabilityException {
+  id: string;
+  doctorId: string;
+  date: string; // ISO date
+  /** True = no hours at all. False = startTime/endTime replace the pattern. */
+  isClosed: boolean;
+  startTime?: string;
+  endTime?: string;
+  reason?: string;
+}
+
+/**
+ * The endpoint answers with the weekly pattern *and* the upcoming exceptions;
+ * this keeps returning just the windows, which is what the availability grid
+ * reads. Use getDoctorExceptions for the other half.
+ *
+ * "me" is the default and is what a doctor's own screens pass: the server
+ * resolves whose hours these are from the session, so no doctorId is sent for
+ * a doctor-scoped action. Front desk names the doctor explicitly.
+ */
+export async function getDoctorAvailability(doctorId = "me"): Promise<DoctorAvailability[]> {
+  const { windows } = await request<{
+    windows: DoctorAvailability[];
+    exceptions: AvailabilityException[];
+  }>(`/doctors/${doctorId}/availability`);
+  return windows;
+}
+
+/**
+ * Every active doctor's hours, for the front-desk screens that show the whole
+ * clinic. Each window carries its doctorId — filter before handing them to
+ * lib/schedule, whose helpers are per-doctor by design.
+ */
+export async function getClinicAvailability(): Promise<DoctorAvailability[]> {
+  const { windows } = await request<{
+    windows: DoctorAvailability[];
+    exceptions: AvailabilityException[];
+  }>("/doctors/availability");
+  return windows;
+}
+
+export async function getDoctorExceptions(doctorId: string): Promise<AvailabilityException[]> {
+  const { exceptions } = await request<{
+    windows: DoctorAvailability[];
+    exceptions: AvailabilityException[];
+  }>(`/doctors/${doctorId}/availability`);
+  return exceptions;
 }
 
 export async function setDoctorDayAvailability(
@@ -302,8 +431,36 @@ export async function setDoctorDayAvailability(
 ): Promise<DoctorAvailability[]> {
   return request<DoctorAvailability[]>(`/doctors/${doctorId}/availability/${dayOfWeek}`, {
     method: "PUT",
-    body: JSON.stringify({ windows }),
+    // Only the times are sent: the doctor and the day are in the path.
+    body: JSON.stringify({
+      windows: windows.map(({ startTime, endTime }) => ({ startTime, endTime })),
+    }),
   });
+}
+
+export interface CreateExceptionInput {
+  date: string;
+  isClosed?: boolean;
+  startTime?: string;
+  endTime?: string;
+  reason?: string;
+}
+
+export async function createDoctorException(
+  doctorId: string,
+  input: CreateExceptionInput,
+): Promise<AvailabilityException> {
+  return request<AvailabilityException>(`/doctors/${doctorId}/exceptions`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteDoctorException(
+  doctorId: string,
+  exceptionId: string,
+): Promise<void> {
+  await request(`/doctors/${doctorId}/exceptions/${exceptionId}`, { method: "DELETE" });
 }
 
 // --- Auth ------------------------------------------------------
@@ -346,6 +503,7 @@ export interface InviteStaffInput {
   role: StaffRole;
   jobTitle: string;
   specialty?: string;
+  /** Ignored by the API, which records the signed-in inviter instead. */
   invitedBy: string;
 }
 
@@ -355,7 +513,7 @@ export type InviteStaffResult =
 
 export async function inviteStaffUser(input: InviteStaffInput): Promise<InviteStaffResult> {
   try {
-    const data = await request<{ user: StaffSession; inviteToken: string }>("/staff/invite", {
+    const data = await request<{ user: StaffSession; inviteToken: string }>("/staff/invitations", {
       method: "POST",
       body: JSON.stringify(input),
     });
@@ -366,7 +524,16 @@ export async function inviteStaffUser(input: InviteStaffInput): Promise<InviteSt
 }
 
 export async function getStaffInvitation(token: string): Promise<StaffSession | undefined> {
-  return request<StaffSession>(`/auth/invitation/${token}`);
+  try {
+    const { session } = await request<{ session: StaffSession }>(
+      `/staff/invitations/${encodeURIComponent(token)}`,
+    );
+    return session;
+  } catch {
+    // A bad, used or expired link is not an error to the invite screen — it
+    // renders its "this link is not valid" stage off an absent invitee.
+    return undefined;
+  }
 }
 
 export type AcceptInvitationResult =
@@ -378,10 +545,13 @@ export async function acceptStaffInvitation(
   password: string,
 ): Promise<AcceptInvitationResult> {
   try {
-    const session = await request<StaffSession>("/auth/accept-invitation", {
-      method: "POST",
-      body: JSON.stringify({ token, password }),
-    });
+    const { session } = await request<{ session: StaffSession }>(
+      `/staff/invitations/${encodeURIComponent(token)}/accept`,
+      {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      },
+    );
     return { ok: true, session };
   } catch (error: unknown) {
     return { ok: false, error: errorMessage(error) };
@@ -390,7 +560,7 @@ export async function acceptStaffInvitation(
 
 export async function revokeStaffInvitation(id: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    await request(`/staff/${id}/invitation`, { method: "DELETE" });
+    await request(`/staff/invitations/${id}`, { method: "DELETE" });
     return { ok: true };
   } catch (error: unknown) {
     return { ok: false, error: errorMessage(error) };
@@ -401,7 +571,7 @@ export async function resendStaffInvitation(
   id: string,
 ): Promise<{ ok: true; inviteToken: string } | { ok: false; error: string }> {
   try {
-    const data = await request<{ inviteToken: string }>(`/staff/${id}/resend-invitation`, {
+    const data = await request<{ inviteToken: string }>(`/staff/invitations/${id}/resend`, {
       method: "POST",
     });
     return { ok: true, inviteToken: data.inviteToken };

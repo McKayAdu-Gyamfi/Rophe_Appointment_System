@@ -16,6 +16,7 @@ import { fmtRelative } from "@/lib/format";
 import { useAuth } from "@/lib/role-context";
 import { TemplateEditor } from "./template-editor";
 import { cn } from "@/lib/utils";
+import { LoadingOverlay } from "@/components/loading";
 
 // ---------------------------------------------------------------------------
 // Templates tab.
@@ -84,10 +85,13 @@ export function TemplatesPanel() {
 
   if (loading) {
     return (
-      <div className="animate-pulse space-y-3">
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="h-32 rounded-panel bg-slate-200" />
-        ))}
+      <div className="relative">
+        <div className="animate-pulse space-y-3">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-32 rounded-panel bg-slate-200" />
+          ))}
+        </div>
+        <LoadingOverlay label="Loading templates…" className="top-12" />
       </div>
     );
   }

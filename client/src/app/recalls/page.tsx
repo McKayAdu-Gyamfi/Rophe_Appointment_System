@@ -15,13 +15,11 @@ import {
   UsersRound,
 } from "lucide-react";
 import {
-  getDoctors,
-  getMessageTemplates,
   getPatientRecalls,
   sendMessage,
   type RecallEntry,
 } from "@/lib/api";
-import type { Doctor, MessageTemplate } from "@/lib/types";
+
 import {
   LAPSING_MONTHS,
   RECALL_COOLDOWN_DAYS,
@@ -34,10 +32,10 @@ import {
 } from "@/lib/visits";
 import { CHANNEL_STYLES, RECALL_STATE_STYLES } from "@/lib/status-styles";
 import { fmtDate, fmtRelative, initials } from "@/lib/format";
-import { renderTemplate } from "@/lib/templates";
 import { useRole } from "@/lib/role-context";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { cn } from "@/lib/utils";
+import { LoadingOverlay } from "@/components/loading";
 
 // ---------------------------------------------------------------------------
 // Patient recalls — the six-month sweep.
@@ -69,6 +67,40 @@ const TABS: { value: Tab; label: string }[] = [
   { value: "all", label: "All patients" },
 ];
 
+/**
+ * How long since the patient was last actually seen.
+ *
+ * This is a lens on the register, NOT the clinic's recall policy. That lives in
+ * ClinicSettings.recallMonths and decides who is lapsed and therefore who the
+ * sweep messages; changing what you are looking at must not change who gets
+ * chased, so the two are deliberately separate controls.
+ *
+ * Measured on months since the last attended visit — "hasn't been seen since"
+ * in the plain sense, and the same number the "last seen" column shows. It is
+ * NOT the clock that decides `lapsed`: that one counts any contact with the
+ * diary, so a patient who no-showed last week is quiet for a week but unseen
+ * for however long it has really been. Both are true, they answer different
+ * questions, and the label says which one this is.
+ *
+ * Bands are half-open — [min, max) — so a patient at exactly 3 months falls in
+ * "3–6 months" and never in two bands at once. Edit this array to change the
+ * bands; nothing else needs to know.
+ */
+const NOT_SEEN_BANDS: { value: string; label: string; min: number; max: number }[] = [
+  { value: "any", label: "Any", min: 0, max: Infinity },
+  { value: "under-1", label: "Under a month", min: 0, max: 1 },
+  { value: "1-3", label: "1–3 months", min: 1, max: 3 },
+  { value: "3-6", label: "3–6 months", min: 3, max: 6 },
+  { value: "6-12", label: "6–12 months", min: 6, max: 12 },
+  { value: "over-12", label: "Over a year", min: 12, max: Infinity },
+];
+
+function inBand(summary: PatientVisitSummary, bandValue: string): boolean {
+  const band = NOT_SEEN_BANDS.find((b) => b.value === bandValue);
+  if (!band || band.value === "any") return true;
+  return summary.monthsSinceAnchor >= band.min && summary.monthsSinceAnchor < band.max;
+}
+
 const REASON_FILTERS: { value: "all" | RecallReason; label: string }[] = [
   { value: "all", label: "Any reason" },
   { value: "stopped-returning", label: "Stopped returning" },
@@ -77,7 +109,7 @@ const REASON_FILTERS: { value: "all" | RecallReason; label: string }[] = [
 
 /** Everything the screen reads. Shared by the first load and every refresh. */
 function fetchRecallData() {
-  return Promise.all([getPatientRecalls(), getMessageTemplates(), getDoctors()]);
+  return Promise.all([getPatientRecalls()]);
 }
 
 function digits(value: string): string {
@@ -107,12 +139,11 @@ export default function RecallsPage() {
   const canAct = role === "front-desk";
 
   const [entries, setEntries] = useState<RecallEntry[]>([]);
-  const [templates, setTemplates] = useState<MessageTemplate[]>([]);
-  const [doctor, setDoctor] = useState<Doctor | undefined>();
   const [loading, setLoading] = useState(true);
 
   const [tab, setTab] = useState<Tab>("due");
   const [reason, setReason] = useState<"all" | RecallReason>("all");
+  const [band, setBand] = useState<string>("any");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState<string | null>(null);
@@ -122,31 +153,22 @@ export default function RecallsPage() {
   // patient from "due" to "contacted", so the list has to come back through
   // the same join rather than be patched in place.
   const refresh = useCallback(async () => {
-    const [recalls, tpls, docs] = await fetchRecallData();
+    const [recalls] = await fetchRecallData();
     setEntries(recalls);
-    setTemplates(tpls);
-    setDoctor(docs[0]);
   }, []);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const [recalls, tpls, docs] = await fetchRecallData();
+      const [recalls] = await fetchRecallData();
       if (!active) return;
       setEntries(recalls);
-      setTemplates(tpls);
-      setDoctor(docs[0]);
       setLoading(false);
     })();
     return () => {
       active = false;
     };
   }, []);
-
-  const recallTemplate = useMemo(
-    () => templates.find((t) => t.type === "recall"),
-    [templates],
-  );
 
   const counts = useMemo(() => {
     let due = 0;
@@ -166,7 +188,12 @@ export default function RecallsPage() {
     return { due, lapsing, contacted, neverAttended, unbooked };
   }, [entries]);
 
-  const visible = useMemo(() => {
+  /**
+   * Everything except the band filter. The band chips count against this, so
+   * their numbers describe the list you would actually get by clicking one
+   * rather than the whole register.
+   */
+  const beforeBand = useMemo(() => {
     const q = query.trim().toLowerCase();
     const qDigits = digits(query);
 
@@ -180,6 +207,19 @@ export default function RecallsPage() {
         return patient.email?.toLowerCase().includes(q) ?? false;
       });
   }, [entries, tab, reason, query]);
+
+  const bandCounts = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const b of NOT_SEEN_BANDS) {
+      totals.set(b.value, beforeBand.filter(({ summary }) => inBand(summary, b.value)).length);
+    }
+    return totals;
+  }, [beforeBand]);
+
+  const visible = useMemo(
+    () => beforeBand.filter(({ summary }) => inBand(summary, band)),
+    [beforeBand, band],
+  );
 
   // Only rows that can actually be sent to are selectable, so "select all"
   // never quietly includes someone the send would skip.
@@ -224,27 +264,22 @@ export default function RecallsPage() {
    * written here — the whole point of the templates screen is that staff can
    * change what these say without a deploy.
    */
-  const sendRecall = useCallback(
-    async (entry: RecallEntry) => {
-      const { patient, summary } = entry;
-      const body = recallTemplate
-        ? renderTemplate(recallTemplate.body, {
-            patient,
-            doctor,
-            lastVisitDate: summary.lastVisit?.date,
-          })
-        : `Hello ${patient.fullName.split(" ")[0]}, it has been a while since your last visit. Call the clinic to book a time.`;
+  const sendRecall = useCallback(async (entry: RecallEntry) => {
+    const { patient } = entry;
 
-      await sendMessage({
-        patientId: patient.id,
-        channel: patient.preferredChannel,
-        type: "recall",
-        contentPreview: body,
-      });
-      return body;
-    },
-    [recallTemplate, doctor],
-  );
+    // The API renders the clinic's current recall template against this
+    // patient's record and logs what it sent. Report that back rather than a
+    // second, locally rendered guess at the same text — a recall is not tied
+    // to an appointment, so there is no one clinician to render {{doctor}}
+    // from here anyway.
+    const message = await sendMessage({
+      patientId: patient.id,
+      channel: patient.preferredChannel,
+      type: "recall",
+      contentPreview: "",
+    });
+    return message.contentPreview;
+  }, []);
 
   const handleSendOne = useCallback(
     async (entry: RecallEntry) => {
@@ -296,12 +331,13 @@ export default function RecallsPage() {
 
   if (loading) {
     return (
-      <div className="px-4 py-10 sm:px-6 lg:px-8">
+      <div className="relative px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl animate-pulse space-y-4 rounded-surface bg-slate-100 p-4 sm:p-5">
           <div className="h-8 w-56 rounded-lg bg-slate-200" />
           <div className="h-24 rounded-xl bg-slate-200" />
           <div className="h-96 rounded-xl bg-slate-200" />
         </div>
+        <LoadingOverlay label="Loading recalls…" />
       </div>
     );
   }
@@ -423,6 +459,46 @@ export default function RecallsPage() {
               ))}
             </select>
           </div>
+        </div>
+
+        {/* How long since they were last seen. A lens, not the recall policy. */}
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-slate-500">Not seen for</span>
+          {NOT_SEEN_BANDS.map((b) => {
+            const active = band === b.value;
+            const count = bandCounts.get(b.value) ?? 0;
+            return (
+              <button
+                key={b.value}
+                type="button"
+                onClick={() => setBand(b.value)}
+                aria-pressed={active}
+                disabled={count === 0 && b.value !== "any" && !active}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition",
+                  active
+                    ? "bg-slate-900 text-white"
+                    : "bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white",
+                )}
+              >
+                {b.label}
+                <span
+                  className={cn(
+                    "tnum rounded-full px-1.5 py-0.5 text-[10px]",
+                    active ? "bg-slate-700 text-slate-100" : "bg-slate-100 text-slate-500",
+                  )}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+          {band !== "any" && (
+            <span className="text-[11px] text-slate-400">
+              Time since the last visit — not the same clock as “due”, which counts any
+              contact with the diary.
+            </span>
+          )}
         </div>
 
         {tab === "unbooked" && counts.unbooked > 0 && (

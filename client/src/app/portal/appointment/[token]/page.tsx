@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useParams } from "next/navigation";
 import {
@@ -16,41 +16,27 @@ import {
   X,
 } from "lucide-react";
 import {
-  createPatientRequest,
-  getAppointment,
-  getDoctorAvailability,
-  getDoctors,
-  getPatient,
-  getPendingRequests,
-  sendMessage,
-  updateAppointmentStatus,
-  getAppointmentTypes,
-  getClinicSettings,
+  confirmPortalAppointment,
+  createPortalRequest,
+  getPortalAppointment,
+  type PortalView,
 } from "@/lib/api";
-import type {
-  Appointment,
-  Doctor,
-  DoctorAvailability,
-  Patient,
-  PatientRequest,
-  ScheduleConfig,
-} from "@/lib/types";
+import type { PatientRequest, ScheduleConfig } from "@/lib/types";
 import { CLINIC } from "@/lib/clinic";
 import { dateKey, fmtLongDate, fmtTime } from "@/lib/format";
 import { bookableSlots } from "@/lib/schedule";
 import { cn } from "@/lib/utils";
+import { LoadingOverlay } from "@/components/loading";
 
 type Panel = "none" | "reschedule" | "cancel";
 
 export default function PatientAppointmentPage() {
-  const { id } = useParams<{ id: string }>();
+  // The token in the link is the credential. It names the appointment, so
+  // nothing on this page sends an appointment or patient id of its own.
+  const { token } = useParams<{ token: string }>();
 
-  const [appointment, setAppointment] = useState<Appointment | undefined>();
-  const [patient, setPatient] = useState<Patient | undefined>();
-  const [doctor, setDoctor] = useState<Doctor | undefined>();
-  const [availability, setAvailability] = useState<DoctorAvailability[]>([]);
-  const [requests, setRequests] = useState<PatientRequest[]>([]);
-  const [config, setConfig] = useState<ScheduleConfig | null>(null);
+  const [view, setView] = useState<PortalView | null>(null);
+  const [linkError, setLinkError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [panel, setPanel] = useState<Panel>("none");
@@ -61,87 +47,93 @@ export default function PatientAppointmentPage() {
   const [preferredTime, setPreferredTime] = useState("");
   const [reason, setReason] = useState("");
 
-  const load = useCallback(async () => {
-    const appt = await getAppointment(id);
-    const [docs, avail, reqs, types, settings] = await Promise.all([
-      getDoctors(),
-      getDoctorAvailability(),
-      getPendingRequests(),
-      getAppointmentTypes(),
-      getClinicSettings(),
-    ]);
-    const pat = appt ? await getPatient(appt.patientId) : undefined;
-    return { appt, pat, docs, avail, reqs, types, settings };
-  }, [id]);
-
   useEffect(() => {
     let active = true;
     (async () => {
-      const { appt, pat, docs, avail, reqs, types, settings } = await load();
-      if (!active) return;
-      setAppointment(appt);
-      setPatient(pat);
-      setDoctor(docs.find((d) => d.id === appt?.doctorId) ?? docs[0]);
-      setAvailability(avail);
-      setRequests(reqs);
-      setConfig({ clinicSettings: settings, appointmentTypes: types.filter(t => t.isActive) });
-      setLoading(false);
+      try {
+        const next = await getPortalAppointment(token);
+        if (!active) return;
+        setView(next);
+      } catch (error) {
+        if (!active) return;
+        // The API says whether the link expired, was cancelled or never
+        // existed — pass that sentence through rather than a blank page.
+        setLinkError(
+          error instanceof Error ? error.message : "That link could not be opened.",
+        );
+      } finally {
+        if (active) setLoading(false);
+      }
     })();
     return () => {
       active = false;
     };
-  }, [load]);
+  }, [token]);
 
+  const appointment = view?.appointment;
+  const patient = view?.patient;
+  const doctor = view?.doctor;
+
+  const config = useMemo<ScheduleConfig | null>(
+    () =>
+      view?.clinicSettings
+        ? {
+            clinicSettings: view.clinicSettings,
+            appointmentTypes: view.appointmentTypes.filter((t) => t.isActive),
+          }
+        : null,
+    [view],
+  );
+
+  // Already scoped to this appointment by the token.
   const openRequests = useMemo(
-    () => requests.filter((r) => r.appointmentId === id && r.status === "pending"),
-    [requests, id],
+    () => (view?.requests ?? []).filter((r) => r.status === "pending"),
+    [view],
   );
 
   // Slots the patient may ask for — same availability rules staff see.
   const slotOptions = useMemo(() => {
     if (!preferredDate || !config) return [];
-    return bookableSlots(new Date(`${preferredDate}T00:00:00`), [], availability, config).map(
-      (s) => s.time,
-    );
-  }, [preferredDate, availability, config]);
+    return bookableSlots(
+      new Date(`${preferredDate}T00:00:00`),
+      [],
+      view?.availability ?? [],
+      config,
+    ).map((s) => s.time);
+  }, [preferredDate, view, config]);
 
   async function confirmAttendance() {
-    if (!appointment || !patient) return;
+    if (!view) return;
     setBusy(true);
     try {
-      const updated = await updateAppointmentStatus(appointment.id, "confirmed");
-      if (updated) setAppointment({ ...updated });
-      await sendMessage({
-        patientId: patient.id,
-        appointmentId: appointment.id,
-        channel: patient.preferredChannel,
-        type: "confirmation",
-        contentPreview: `${patient.fullName} confirmed attendance for ${fmtLongDate(appointment.date)}.`,
-      });
+      const { status } = await confirmPortalAppointment(token);
+      setView({ ...view, appointment: { ...view.appointment, status } });
       setDone("Thank you — your attendance is confirmed. We'll see you then.");
+    } catch (error) {
+      setDone(error instanceof Error ? error.message : "Something went wrong. Please call us.");
     } finally {
       setBusy(false);
     }
   }
 
   async function submitRequest(type: PatientRequest["requestType"]) {
-    if (!appointment || !patient) return;
+    if (!view) return;
     setBusy(true);
     try {
-      const created = await createPatientRequest({
-        appointmentId: appointment.id,
-        patientId: patient.id,
+      const created = await createPortalRequest(token, {
         requestType: type,
         requestedDate: type === "reschedule" ? preferredDate || undefined : undefined,
         requestedTime: type === "reschedule" ? preferredTime || undefined : undefined,
         reason: reason.trim() || undefined,
       });
-      setRequests((prev) => [created, ...prev]);
+      setView({ ...view, requests: [created, ...view.requests] });
       setPanel("none");
       setReason("");
       setPreferredDate("");
       setPreferredTime("");
       setDone("Request sent — our staff will confirm shortly.");
+    } catch (error) {
+      setDone(error instanceof Error ? error.message : "Something went wrong. Please call us.");
     } finally {
       setBusy(false);
     }
@@ -149,11 +141,12 @@ export default function PatientAppointmentPage() {
 
   if (loading) {
     return (
-      <div className="px-4 py-10">
+      <div className="relative px-4 py-10">
         <div className="mx-auto max-w-md animate-pulse space-y-4">
           <div className="h-40 rounded-2xl bg-slate-200" />
           <div className="h-56 rounded-2xl bg-slate-200" />
         </div>
+        <LoadingOverlay label="Loading your appointment…" />
       </div>
     );
   }
@@ -163,9 +156,11 @@ export default function PatientAppointmentPage() {
       <div className="px-4 py-16">
         <div className="mx-auto max-w-md text-center">
           <CalendarOff className="mx-auto h-10 w-10 text-slate-300" />
-          <h1 className="mt-4 text-xl font-semibold text-slate-900">Appointment not found</h1>
+          <h1 className="mt-4 text-xl font-semibold text-slate-900">
+            {linkError ? "This link isn't working" : "Appointment not found"}
+          </h1>
           <p className="mt-2 text-sm text-slate-500">
-            This link may have expired. Please call the clinic on{" "}
+            {linkError ?? "This link may have expired."} Please call the clinic on{" "}
             <a href={`tel:${CLINIC.phoneDial}`} className="font-medium text-teal-700">
               {CLINIC.phone}
             </a>

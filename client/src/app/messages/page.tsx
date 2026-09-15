@@ -14,6 +14,7 @@ import { fmtDateTime, initials } from "@/lib/format";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { TemplatesPanel } from "@/components/messages/templates-panel";
 import { cn } from "@/lib/utils";
+import { LoadingOverlay } from "@/components/loading";
 
 type Tab = "log" | "templates";
 
@@ -126,12 +127,13 @@ export default function MessagesPage() {
 
   if (loading) {
     return (
-      <div className="px-4 py-10 sm:px-6 lg:px-8">
+      <div className="relative px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl animate-pulse space-y-4 rounded-surface bg-slate-100 p-4 sm:p-5">
           <div className="h-8 w-48 rounded-lg bg-slate-200" />
           <div className="h-20 rounded-xl bg-slate-200" />
           <div className="h-96 rounded-xl bg-slate-200" />
         </div>
+        <LoadingOverlay label="Loading messages…" />
       </div>
     );
   }

@@ -15,6 +15,7 @@ function BookAppointmentContent() {
       initialPatientId={params.get("patientId") ?? undefined}
       initialDate={params.get("date") ?? undefined}
       initialTime={params.get("time") ?? undefined}
+      initialDoctorId={params.get("doctorId") ?? undefined}
     />
   );
 }

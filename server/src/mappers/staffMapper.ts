@@ -49,6 +49,15 @@ export function toApiRole(role: Role): ApiStaffRole {
   return role === "DOCTOR" ? "doctor" : "front-desk";
 }
 
+/**
+ * Inbound. Only the two roles the invite screen offers: ADMIN is deliberately
+ * not creatable over the API — an administrator is made in the database, by
+ * someone with access to it.
+ */
+export function toDbRole(role: ApiStaffRole): Role {
+  return role === "doctor" ? "DOCTOR" : "FRONT_DESK";
+}
+
 export function toApiStatus(status: UserStatus): ApiStaffStatus {
   return status.toLowerCase() as ApiStaffStatus;
 }

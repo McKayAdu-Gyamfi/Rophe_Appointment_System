@@ -50,6 +50,22 @@ export function daySlotTimes(config: ScheduleConfig): string[] {
  * 08:00–10:00 and 14:00–17:00 with a gap between — so this returns a list, not
  * a single window.
  */
+/**
+ * Narrow a clinic-wide availability list to one doctor.
+ *
+ * Everything below answers "is this slot open?", and that question only has an
+ * answer for one clinician at a time — merging two doctors' windows would
+ * report a slot as open because *somebody* is in, which is not what the person
+ * booking is asking.
+ */
+export function forDoctor(
+  availability: DoctorAvailability[],
+  doctorId: string | undefined,
+): DoctorAvailability[] {
+  if (!doctorId) return [];
+  return availability.filter((a) => a.doctorId === doctorId);
+}
+
 export function windowsForDate(
   date: Date,
   availability: DoctorAvailability[],

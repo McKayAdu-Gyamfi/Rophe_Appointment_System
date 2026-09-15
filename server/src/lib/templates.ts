@@ -1,4 +1,5 @@
 import type { MessageType } from "@prisma/client";
+import { CLINIC } from "./clinic";
 
 export type TemplateVariableKey =
   | "first_name"
@@ -8,7 +9,8 @@ export type TemplateVariableKey =
   | "doctor"
   | "clinic_name"
   | "clinic_phone"
-  | "last_visit";
+  | "last_visit"
+  | "portal_link";
 
 export const TEMPLATE_VARIABLES: TemplateVariableKey[] = [
   "first_name",
@@ -18,14 +20,15 @@ export const TEMPLATE_VARIABLES: TemplateVariableKey[] = [
   "doctor",
   "clinic_name",
   "clinic_phone",
-  "last_visit"
+  "last_visit",
+  "portal_link"
 ];
 
 const VARIABLES_SET = new Set(TEMPLATE_VARIABLES);
 
 export const VARIABLES_BY_TYPE: Record<MessageType, TemplateVariableKey[]> = {
-  CONFIRMATION: ["first_name", "full_name", "date", "time", "doctor", "clinic_name", "clinic_phone"],
-  REMINDER: ["first_name", "full_name", "date", "time", "doctor", "clinic_name", "clinic_phone"],
+  CONFIRMATION: ["first_name", "full_name", "date", "time", "doctor", "clinic_name", "clinic_phone", "portal_link"],
+  REMINDER: ["first_name", "full_name", "date", "time", "doctor", "clinic_name", "clinic_phone", "portal_link"],
   FOLLOW_UP: ["first_name", "full_name", "date", "time", "doctor", "clinic_name", "clinic_phone"],
   RECALL: ["first_name", "full_name", "last_visit", "doctor", "clinic_name", "clinic_phone"],
   BIRTHDAY: ["first_name", "full_name", "clinic_name", "clinic_phone"],
@@ -126,4 +129,88 @@ export function validateTemplate(
 
 export function hasBlockingIssue(issues: TemplateIssue[]): boolean {
   return issues.some((i) => i.level === "error");
+}
+
+// --- Rendering -------------------------------------------------------------
+//
+// Ported from renderTemplate() in client/src/lib/templates.ts, which is the
+// specification. It matters that this lives server-side now: Message.body
+// stores the text that actually went out, so the render has to happen where
+// the row is written, not in a browser that may be sending something else.
+
+/** "Monday 3 March" — unambiguous, and short enough for one SMS segment. */
+function fmtMessageDate(isoDate: string): string {
+  return new Date(`${isoDate}T00:00:00.000Z`).toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  });
+}
+
+/** "9:00 AM" */
+function fmtMessageTime(time: string): string {
+  const [hours, minutes] = time.split(":").map(Number);
+  const suffix = hours >= 12 ? "PM" : "AM";
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12;
+  return `${hour12}:${String(minutes).padStart(2, "0")} ${suffix}`;
+}
+
+export interface RenderContext {
+  patientFullName: string;
+  /** "YYYY-MM-DD" and "HH:mm" of the appointment, when there is one. */
+  appointmentDate?: string;
+  appointmentTime?: string;
+  doctorFullName?: string;
+  /** ISO date of the last completed visit. Only recall messages use it. */
+  lastVisitDate?: string;
+  /** The patient's own link to this appointment. Confirmations and reminders. */
+  portalLink?: string;
+}
+
+/**
+ * Every field needs a fallback. A message reading "Hello ," is worse than one
+ * reading "Hello there," — and a recall goes to patients who have never
+ * attended, so {{last_visit}} has to read naturally with nothing behind it.
+ */
+const RESOLVERS: Record<
+  TemplateVariableKey,
+  { resolve: (ctx: RenderContext) => string | undefined; fallback: string }
+> = {
+  first_name: {
+    resolve: (ctx) => ctx.patientFullName.trim().split(" ")[0],
+    fallback: "there",
+  },
+  full_name: { resolve: (ctx) => ctx.patientFullName, fallback: "there" },
+  date: {
+    resolve: (ctx) => (ctx.appointmentDate ? fmtMessageDate(ctx.appointmentDate) : undefined),
+    fallback: "your appointment date",
+  },
+  time: {
+    resolve: (ctx) => (ctx.appointmentTime ? fmtMessageTime(ctx.appointmentTime) : undefined),
+    fallback: "the scheduled time",
+  },
+  doctor: { resolve: (ctx) => ctx.doctorFullName, fallback: "your doctor" },
+  last_visit: {
+    resolve: (ctx) => (ctx.lastVisitDate ? fmtMessageDate(ctx.lastVisitDate) : undefined),
+    fallback: "a while",
+  },
+  portal_link: {
+    resolve: (ctx) => ctx.portalLink,
+    // A message whose link failed to render must still tell the patient how to
+    // reach the clinic, rather than trailing off mid-sentence.
+    fallback: `call ${CLINIC.phone}`,
+  },
+  clinic_name: { resolve: () => CLINIC.name, fallback: CLINIC.name },
+  clinic_phone: { resolve: () => CLINIC.phone, fallback: CLINIC.phone },
+};
+
+/** Fill a template body for one patient. Unknown fields render as [field]. */
+export function renderTemplate(body: string, ctx: RenderContext): string {
+  return body.replace(FIELD_PATTERN, (_full, key: string) => {
+    const variable = RESOLVERS[key as TemplateVariableKey];
+    if (!variable) return `[${key}]`;
+    const value = variable.resolve(ctx);
+    return value && value.trim() ? value : variable.fallback;
+  });
 }

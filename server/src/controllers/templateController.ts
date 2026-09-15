@@ -5,6 +5,7 @@ import { badRequest, notFound } from "../lib/httpError";
 import { validateTemplate } from "../lib/templates";
 import { messageTypeCodec } from "../mappers/enums";
 import { toWireTemplate } from "../mappers/recordMappers";
+import { recordAudit } from "../services/audit";
 
 export const updateTemplateSchema = z.object({
   body: z.string().min(1),
@@ -71,6 +72,14 @@ export async function update(req: Request, res: Response) {
     });
   });
 
+  recordAudit({
+    actorUserId: req.auth!.userId,
+    action: "template.updated",
+    entity: "MessageTemplate",
+    entityId: updated.id,
+    meta: { type, from: updated.version - 1, to: updated.version },
+  });
+
   res.json(toWireTemplate(updated));
 }
 
@@ -131,6 +140,14 @@ export async function revert(req: Request, res: Response) {
         revisions: { orderBy: { version: "desc" } },
       },
     });
+  });
+
+  recordAudit({
+    actorUserId: req.auth!.userId,
+    action: "template.reverted",
+    entity: "MessageTemplate",
+    entityId: reverted.id,
+    meta: { type, restoredFrom: versionNum, to: reverted.version },
   });
 
   res.json(toWireTemplate(reverted));

@@ -4,10 +4,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Lock, Plus } from "lucide-react";
-import { getAppointments, getDoctorAvailability, getPatients, getAppointmentTypes, getClinicSettings } from "@/lib/api";
-import type { Appointment, DoctorAvailability, Patient, ScheduleConfig } from "@/lib/types";
+import {
+  getAppointments,
+  getClinicAvailability,
+  getDoctors,
+  getPatients,
+  getAppointmentTypes,
+  getClinicSettings,
+} from "@/lib/api";
+import type { Appointment, Doctor, DoctorAvailability, Patient, ScheduleConfig } from "@/lib/types";
 import { dateKey, fmtLongDate, startOfDay } from "@/lib/format";
-import { addDays, weekDays } from "@/lib/schedule";
+import { addDays, forDoctor, weekDays } from "@/lib/schedule";
+import { buildDoctorTones, shortDoctorName } from "@/lib/doctor-colors";
 import { AppointmentDetailDialog } from "@/components/appointment-detail-dialog";
 import {
   DayView,
@@ -17,6 +25,7 @@ import {
   type ScheduleView,
 } from "@/components/schedule-views";
 import { cn } from "@/lib/utils";
+import { LoadingOverlay } from "@/components/loading";
 
 export default function AppointmentsPage() {
   const router = useRouter();
@@ -24,6 +33,9 @@ export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [availability, setAvailability] = useState<DoctorAvailability[]>([]);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  /** "" is every clinician — the front desk's usual view of the day. */
+  const [doctorFilter, setDoctorFilter] = useState("");
   const [config, setConfig] = useState<ScheduleConfig | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -34,10 +46,11 @@ export default function AppointmentsPage() {
   useEffect(() => {
     let active = true;
     (async () => {
-      const [appts, pts, avail, types, settings] = await Promise.all([
+      const [appts, pts, avail, docs, types, settings] = await Promise.all([
         getAppointments(),
         getPatients(),
-        getDoctorAvailability(),
+        getClinicAvailability(),
+        getDoctors(),
         getAppointmentTypes(),
         getClinicSettings(),
       ]);
@@ -45,6 +58,7 @@ export default function AppointmentsPage() {
       setAppointments(appts);
       setPatients(pts);
       setAvailability(avail);
+      setDoctors(docs);
       setConfig({ clinicSettings: settings, appointmentTypes: types.filter(t => t.isActive) });
       setLoading(false);
     })();
@@ -64,6 +78,29 @@ export default function AppointmentsPage() {
     [patientMap],
   );
 
+  const tones = useMemo(() => buildDoctorTones(doctors), [doctors]);
+  const doctorMap = useMemo(
+    () => new Map(doctors.map((d) => [d.id, d])),
+    [doctors],
+  );
+
+  const shownAppointments = useMemo(
+    () => (doctorFilter ? appointments.filter((a) => a.doctorId === doctorFilter) : appointments),
+    [appointments, doctorFilter],
+  );
+
+  /**
+   * With one clinician chosen the grid is their week. With all of them, a slot
+   * reads as open when *somebody* is free — which is the question front desk is
+   * actually asking before they pick who.
+   */
+  const shownAvailability = useMemo(
+    () => (doctorFilter ? forDoctor(availability, doctorFilter) : availability),
+    [availability, doctorFilter],
+  );
+
+  const showingEveryone = !doctorFilter && doctors.length > 1;
+
   const days = useMemo(() => weekDays(cursor), [cursor]);
 
   const step = useCallback(
@@ -76,9 +113,10 @@ export default function AppointmentsPage() {
   // Booking a slot hands the chosen date/time to the booking form (Prompt 7).
   const startBooking = useCallback(
     (date: Date, time: string) => {
-      router.push(`/appointments/book?date=${dateKey(date)}&time=${time}`);
+      const doctorParam = doctorFilter ? `&doctorId=${doctorFilter}` : "";
+      router.push(`/appointments/book?date=${dateKey(date)}&time=${time}${doctorParam}`);
     },
-    [router],
+    [router, doctorFilter],
   );
 
   const handleChanged = useCallback((updated: Appointment) => {
@@ -88,12 +126,13 @@ export default function AppointmentsPage() {
 
   if (loading) {
     return (
-      <div className="px-4 py-10 sm:px-6 lg:px-8">
+      <div className="relative px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl animate-pulse space-y-4 rounded-surface bg-slate-100 p-4 sm:p-5">
           <div className="h-8 w-56 rounded-lg bg-slate-200" />
           <div className="h-11 rounded-xl bg-slate-200" />
           <div className="h-[32rem] rounded-xl bg-slate-200" />
         </div>
+        <LoadingOverlay label="Loading appointments…" />
       </div>
     );
   }
@@ -171,27 +210,77 @@ export default function AppointmentsPage() {
           )}
         </div>
 
+        {doctors.length > 1 && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-panel bg-white px-4 py-3">
+            <label htmlFor="doctorFilter" className="text-xs font-medium text-slate-600">
+              Doctor
+            </label>
+            <select
+              id="doctorFilter"
+              value={doctorFilter}
+              onChange={(e) => setDoctorFilter(e.target.value)}
+              className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm outline-none transition focus:ring-2 focus:ring-teal-600"
+            >
+              <option value="">All doctors</option>
+              {doctors.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.fullName}
+                </option>
+              ))}
+            </select>
+
+            {showingEveryone && (
+              <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                {doctors.map((d) => (
+                  <li key={d.id} className="inline-flex items-center gap-1.5 text-xs text-slate-600">
+                    <span className={cn("h-2.5 w-2.5 rounded-sm", tones.get(d.id)?.dot)} />
+                    {shortDoctorName(d.fullName)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         {view === "day" && config && (
           <DayView
             date={cursor}
-            appointments={appointments}
-            availability={availability}
+            appointments={shownAppointments}
+            availability={shownAvailability}
             config={config}
             patientName={patientName}
             onSelect={setSelected}
             onBook={startBooking}
+            doctorTone={showingEveryone ? (id) => tones.get(id) : undefined}
+            doctorLabel={
+              showingEveryone
+                ? (id) => {
+                    const name = doctorMap.get(id)?.fullName;
+                    return name ? shortDoctorName(name) : undefined;
+                  }
+                : undefined
+            }
           />
         )}
 
         {view === "week" && config && (
           <WeekView
             days={days}
-            appointments={appointments}
-            availability={availability}
+            appointments={shownAppointments}
+            availability={shownAvailability}
             config={config}
             patientName={patientName}
             onSelect={setSelected}
             onBook={startBooking}
+            doctorTone={showingEveryone ? (id) => tones.get(id) : undefined}
+            doctorLabel={
+              showingEveryone
+                ? (id) => {
+                    const name = doctorMap.get(id)?.fullName;
+                    return name ? shortDoctorName(name) : undefined;
+                  }
+                : undefined
+            }
             onPickDay={(d) => {
               setCursor(d);
               setView("day");
@@ -201,7 +290,7 @@ export default function AppointmentsPage() {
 
         {view === "list" && (
           <ListView
-            appointments={appointments}
+            appointments={shownAppointments}
             patientName={patientName}
             onSelect={setSelected}
           />
@@ -209,8 +298,9 @@ export default function AppointmentsPage() {
 
         <p className="mt-4 flex items-center gap-2 text-xs text-slate-400">
           <Lock className="h-3.5 w-3.5" />
-          Greyed slots fall outside the doctor&apos;s declared availability and can&apos;t be
-          booked.
+          {showingEveryone
+            ? "Greyed slots are outside every doctor's declared availability. Pick a doctor to see one clinician's week."
+            : "Greyed slots fall outside the doctor's declared availability and can't be booked."}
         </p>
       </div>
 

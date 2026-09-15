@@ -32,6 +32,12 @@ export const SCHEDULE_VIEWS: { value: ScheduleView; label: string }[] = [
 
 interface SharedProps {
   appointments: Appointment[];
+  /**
+   * Set only when the calendar is showing more than one clinician. Without it
+   * the chips stay as they were — a single-doctor day needs no colour key.
+   */
+  doctorTone?: (doctorId: string) => { bar: string } | undefined;
+  doctorLabel?: (doctorId: string) => string | undefined;
   availability: DoctorAvailability[];
   config: ScheduleConfig;
   patientName: (id: string) => string;
@@ -50,6 +56,8 @@ export function DayView({
   patientName,
   onSelect,
   onBook,
+  doctorTone,
+  doctorLabel,
 }: SharedProps & { date: Date }) {
   const slots = useMemo(
     () => buildDaySlots(date, appointments, availability, config),
@@ -81,6 +89,8 @@ export function DayView({
               patientName={patientName}
               onSelect={onSelect}
               onBook={onBook ? () => onBook(date, slot.time) : undefined}
+              doctorTone={doctorTone}
+              doctorLabel={doctorLabel}
             />
           </li>
         ))}
@@ -94,11 +104,15 @@ function SlotRow({
   patientName,
   onSelect,
   onBook,
+  doctorTone,
+  doctorLabel,
 }: {
   slot: DaySlot;
   patientName: (id: string) => string;
   onSelect: (appointment: Appointment) => void;
   onBook?: () => void;
+  doctorTone?: (doctorId: string) => { bar: string } | undefined;
+  doctorLabel?: (doctorId: string) => string | undefined;
 }) {
   const hasAppointments = slot.appointments.length > 0;
 
@@ -127,6 +141,8 @@ function SlotRow({
                 appt={appt}
                 patientName={patientName(appt.patientId)}
                 onClick={() => onSelect(appt)}
+                tone={doctorTone?.(appt.doctorId)}
+                doctorLabel={doctorLabel?.(appt.doctorId)}
               />
             ))}
           </div>
@@ -163,10 +179,14 @@ function AppointmentChip({
   appt,
   patientName,
   onClick,
+  tone,
+  doctorLabel,
 }: {
   appt: Appointment;
   patientName: string;
   onClick: () => void;
+  tone?: { bar: string };
+  doctorLabel?: string;
 }) {
   const style = APPOINTMENT_STATUS_STYLES[appt.status];
   return (
@@ -174,14 +194,18 @@ function AppointmentChip({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition hover:brightness-95",
+        "flex w-full items-center gap-2.5 overflow-hidden rounded-lg py-2 pr-3 text-left transition hover:brightness-95",
+        tone ? "pl-0" : "pl-3",
         style.badge,
       )}
     >
+      {/* Whose column this would be, if the calendar had columns. */}
+      {tone && <span className={cn("-my-2 mr-0.5 w-1 self-stretch", tone.bar)} aria-hidden />}
       <span className={cn("h-2 w-2 shrink-0 rounded-full", style.dot)} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold">{patientName}</span>
         <span className="block truncate text-xs opacity-80">
+          {doctorLabel ? `${doctorLabel} · ` : ""}
           {appt.appointmentType} · {appt.durationMinutes} min
         </span>
       </span>

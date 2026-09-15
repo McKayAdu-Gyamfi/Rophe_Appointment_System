@@ -46,11 +46,22 @@ if (isProduction && sessionSecret.startsWith("dev-only")) {
   );
 }
 
+const clientUrl = process.env.CLIENT_URL?.trim() || "http://localhost:3000";
+
+// credentials:true forbids a wildcard origin, so CORS is only ever as correct
+// as this value. Defaulting to localhost in production would not fail loudly —
+// it would just refuse every real browser, which is a confusing way to find out.
+if (isProduction && clientUrl.includes("localhost")) {
+  throw new Error(
+    "CLIENT_URL is still pointing at localhost. Set it to the deployed client origin.",
+  );
+}
+
 export const env = {
   nodeEnv,
   isProduction,
   port: int("PORT", 4000),
-  clientUrl: process.env.CLIENT_URL?.trim() || "http://localhost:3000",
+  clientUrl,
   databaseUrl: required("DATABASE_URL"),
 
   sessionSecret,
@@ -58,8 +69,22 @@ export const env = {
   sessionDays: int("SESSION_DAYS", 7),
 
   /**
+   * How long an invitation link stays usable. Short on purpose: it is a
+   * credential sent over WhatsApp, and a new joiner who has not used it within
+   * a week should be given a fresh one rather than a stale one that still works.
+   */
+  inviteDays: int("INVITE_DAYS", 7),
+
+  /**
    * Which messaging adapter to use. `noop` logs instead of sending, so the
    * whole application works end to end before any provider contract exists.
    */
   messageProvider: process.env.MESSAGE_PROVIDER?.trim() || "noop",
+
+  /**
+   * Shared secret the delivery webhook must present. The callback endpoint is
+   * public, so without this anybody who can reach it can mark the clinic's
+   * messages delivered. Unset locally; set in every deployed environment.
+   */
+  messageWebhookSecret: process.env.MESSAGE_WEBHOOK_SECRET?.trim() || "",
 } as const;

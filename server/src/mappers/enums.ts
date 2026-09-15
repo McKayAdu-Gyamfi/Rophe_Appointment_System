@@ -15,6 +15,7 @@
 import type {
   AppointmentStatus as DbAppointmentStatus,
   Channel as DbChannel,
+  DeliveryStatus as DbDeliveryStatus,
   MessageType as DbMessageType,
   RequestStatus as DbRequestStatus,
   RequestType as DbRequestType,
@@ -36,6 +37,7 @@ export type WireMessageType =
   | "follow-up"
   | "recall"
   | "birthday";
+export type WireDeliveryStatus = "sent" | "delivered" | "failed";
 export type WireRequestType = "reschedule" | "cancellation";
 export type WireRequestStatus = "pending" | "confirmed" | "declined";
 
@@ -103,6 +105,20 @@ export const messageTypeCodec = codec<DbMessageType, WireMessageType>("message t
   ["RECALL", "recall"],
   ["BIRTHDAY", "birthday"],
 ]);
+
+/**
+ * What the three states actually claim, per the PRD: `sent` means the provider
+ * accepted it and nobody has confirmed the patient received it; `delivered`
+ * means the provider confirmed the device; `failed` means undeliverable.
+ */
+export const deliveryStatusCodec = codec<DbDeliveryStatus, WireDeliveryStatus>(
+  "delivery status",
+  [
+    ["SENT", "sent"],
+    ["DELIVERED", "delivered"],
+    ["FAILED", "failed"],
+  ],
+);
 
 export const requestTypeCodec = codec<DbRequestType, WireRequestType>("request type", [
   ["RESCHEDULE", "reschedule"],

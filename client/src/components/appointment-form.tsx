@@ -7,7 +7,7 @@ import { CalendarOff, Check, Clock3, Loader2, Search, UserPlus, X } from "lucide
 import {
   bookAppointment,
   getAppointments,
-  getDoctorAvailability,
+  getClinicAvailability,
   getDoctors,
   getPatients,
   sendMessage,
@@ -22,6 +22,7 @@ import {
   availabilityLabel,
   buildDaySlots,
   toMinutes,
+  forDoctor,
   windowContaining,
 } from "@/lib/schedule";
 import {
@@ -34,6 +35,7 @@ import {
 import { isFirstVisit as hasNeverAttended } from "@/lib/visits";
 import { NewPatientDialog } from "./new-patient-dialog";
 import { cn } from "@/lib/utils";
+import { LoadingOverlay } from "@/components/loading";
 
 // ---------------------------------------------------------------------------
 // Book / reschedule appointment (PRD Section 3.1 #5, Section 6 #1).
@@ -53,6 +55,8 @@ export interface AppointmentFormProps {
   initialPatientId?: string;
   initialDate?: string;
   initialTime?: string;
+  /** Carried from the calendar when it was filtered to one clinician. */
+  initialDoctorId?: string;
 }
 
 export function AppointmentForm({
@@ -60,6 +64,7 @@ export function AppointmentForm({
   initialPatientId,
   initialDate,
   initialTime,
+  initialDoctorId,
 }: AppointmentFormProps) {
   const router = useRouter();
   const isReschedule = Boolean(appointment);
@@ -67,7 +72,8 @@ export function AppointmentForm({
   const [patients, setPatients] = useState<Patient[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [availability, setAvailability] = useState<DoctorAvailability[]>([]);
-  const [doctor, setDoctor] = useState<Doctor | undefined>();
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [doctorId, setDoctorId] = useState(appointment?.doctorId ?? initialDoctorId ?? "");
   const [config, setConfig] = useState<ScheduleConfig | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -98,7 +104,7 @@ export function AppointmentForm({
       const [pts, appts, avail, docs, types, settings] = await Promise.all([
         getPatients(),
         getAppointments(),
-        getDoctorAvailability(),
+        getClinicAvailability(),
         getDoctors(),
         getAppointmentTypes(),
         getClinicSettings(),
@@ -107,7 +113,11 @@ export function AppointmentForm({
       setPatients(pts);
       setAppointments(appts);
       setAvailability(avail);
-      setDoctor(docs[0]);
+      setDoctors(docs);
+      // Rescheduling keeps the clinician the patient is already booked with;
+      // a new booking starts unset so the choice is made rather than defaulted
+      // into whoever the API happened to list first.
+      setDoctorId((current) => current || (docs.length === 1 ? docs[0].id : ""));
       
       const activeTypes = types.filter((t) => t.isActive).sort((a, b) => a.sortOrder - b.sortOrder);
       const loadedConfig = { clinicSettings: settings, appointmentTypes: activeTypes };
@@ -172,25 +182,38 @@ export function AppointmentForm({
       .slice(0, 6);
   }, [patients, query]);
 
+  const doctor = useMemo(
+    () => doctors.find((d) => d.id === doctorId),
+    [doctors, doctorId],
+  );
+
+  // Slots answer "is this clinician free?", so both the windows and the
+  // appointments they are checked against are narrowed to the chosen doctor.
+  const doctorAvailability = useMemo(
+    () => forDoctor(availability, doctorId),
+    [availability, doctorId],
+  );
+
   const selectedDate = useMemo(() => new Date(`${date}T00:00:00`), [date]);
 
   // When rescheduling, the appointment's own slot shouldn't count as taken.
   const otherAppointments = useMemo(
-    () => appointments.filter((a) => a.id !== appointment?.id),
-    [appointments, appointment?.id],
+    () => appointments.filter((a) => a.id !== appointment?.id && a.doctorId === doctorId),
+    [appointments, appointment?.id, doctorId],
   );
 
   const slots = useMemo(
-    () => (config ? buildDaySlots(selectedDate, otherAppointments, availability, config) : []),
-    [selectedDate, otherAppointments, availability, config],
+    () =>
+      config ? buildDaySlots(selectedDate, otherAppointments, doctorAvailability, config) : [],
+    [selectedDate, otherAppointments, doctorAvailability, config],
   );
 
-  const openLabel = availabilityLabel(selectedDate, availability);
+  const openLabel = availabilityLabel(selectedDate, doctorAvailability);
 
   // The specific open window the chosen slot sits in — a day can have several.
   const activeWindow = useMemo(
-    () => (time ? windowContaining(selectedDate, time, availability) : undefined),
-    [selectedDate, time, availability],
+    () => (time ? windowContaining(selectedDate, time, doctorAvailability) : undefined),
+    [selectedDate, time, doctorAvailability],
   );
 
   // A 45-minute visit can't start in the last 30 minutes of the clinic window.
@@ -209,6 +232,7 @@ export function AppointmentForm({
     setError(null);
 
     if (!patientId) return setError("Select a patient for this appointment.");
+    if (!doctor) return setError("Select a doctor for this appointment.");
     if (!openLabel) return setError("The doctor isn't available on that day — pick another date.");
     if (!time) return setError("Pick an available time slot.");
     if (!isSlotBookable(time)) {
@@ -242,7 +266,7 @@ export function AppointmentForm({
           })
         : await bookAppointment({
             patientId,
-            doctorId: doctor?.id ?? "doc-1",
+            doctorId: doctor.id,
             appointmentType: type,
             date,
             time,
@@ -251,6 +275,7 @@ export function AppointmentForm({
           });
 
       if (!saved) {
+        setSubmitting(false);
         setError("Couldn't save that appointment. Try again.");
         return;
       }
@@ -270,19 +295,22 @@ export function AppointmentForm({
       });
 
       toast.success(`Confirmation sent via ${channelLabel}`, { description: preview });
+      // No reset on success: the spinner stays up until the calendar loads.
       router.push("/appointments");
     } catch {
-      setError("Something went wrong. Try again.");
-    } finally {
       setSubmitting(false);
+      setError("Something went wrong. Try again.");
     }
   }
 
   if (loading) {
     return (
-      <div className="animate-pulse space-y-4">
-        <div className="h-24 rounded-xl bg-slate-200" />
-        <div className="h-64 rounded-xl bg-slate-200" />
+      <div className="relative">
+        <div className="animate-pulse space-y-4">
+          <div className="h-24 rounded-xl bg-slate-200" />
+          <div className="h-64 rounded-xl bg-slate-200" />
+        </div>
+        <LoadingOverlay label="Loading booking details…" className="top-20" />
       </div>
     );
   }
@@ -381,6 +409,30 @@ export function AppointmentForm({
 
       {/* 2. Type & duration */}
       <Section step={2} title="Appointment details">
+        <div className="mb-4">
+          <label htmlFor="doctor" className="mb-1.5 block text-sm font-medium text-slate-700">
+            Doctor
+          </label>
+          <select
+            id="doctor"
+            value={doctorId}
+            onChange={(e) => {
+              setDoctorId(e.target.value);
+              // Their hours differ, so a time chosen against the previous
+              // clinician's week means nothing against this one's.
+              setTime("");
+            }}
+            className="w-full rounded-lg bg-slate-100 px-3 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-teal-600"
+          >
+            <option value="">Choose a doctor…</option>
+            {doctors.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.fullName} · {d.specialty}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="type" className="mb-1.5 block text-sm font-medium text-slate-700">
@@ -504,9 +556,17 @@ export function AppointmentForm({
           ) : (
             <div className="flex items-center gap-2.5 rounded-xl bg-slate-50 px-4 py-4 text-sm text-slate-500">
               <CalendarOff className="h-4 w-4 shrink-0 text-slate-400" />
-              {doctor?.fullName ?? "The doctor"} isn&apos;t available on{" "}
-              {selectedDate.toLocaleDateString("en-GB", { weekday: "long" })}s. Choose another
-              date.
+              {doctor ? (
+                <>
+                  {doctor.fullName} isn&apos;t available on{" "}
+                  {selectedDate.toLocaleDateString("en-GB", { weekday: "long" })}s. Choose another
+                  date.
+                </>
+              ) : (
+                // Slots belong to a clinician, so there is nothing to show
+                // until one is chosen.
+                <>Choose a doctor above to see their available times.</>
+              )}
             </div>
           )}
         </div>

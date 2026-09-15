@@ -14,10 +14,15 @@ import {
   toMinutes,
   windowsForDate,
 } from "@/lib/schedule";
+import { useAuth } from "@/lib/role-context";
 import { cn } from "@/lib/utils";
+import { LoadingOverlay } from "@/components/loading";
 
-const DOCTOR_ID = "doc-1";
-
+/**
+ * Whose hours these are comes from the session, never a constant. Reads and
+ * writes go to "me": the server resolves the doctor from the session, so this
+ * screen cannot ask for — or edit — anybody else's week.
+ */
 const DAYS = [
   { index: 1, label: "Monday", short: "Mon" },
   { index: 2, label: "Tuesday", short: "Tue" },
@@ -54,6 +59,8 @@ function mondayOfCurrentWeek(): Date {
 }
 
 export default function DoctorAvailabilityPage() {
+  const { session, ready } = useAuth();
+  const doctorId = session?.doctorId;
   const [availability, setAvailability] = useState<DoctorAvailability[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [config, setConfig] = useState<ScheduleConfig | null>(null);
@@ -63,24 +70,25 @@ export default function DoctorAvailabilityPage() {
   const times = useMemo(() => config ? daySlotTimes(config) : [], [config]);
 
   useEffect(() => {
+    if (!doctorId) return;
     let active = true;
     (async () => {
       const [avail, appts, settings, types] = await Promise.all([
-        getDoctorAvailability(DOCTOR_ID),
+        getDoctorAvailability(),
         getAppointments(),
         getClinicSettings(),
         getAppointmentTypes(),
       ]);
       if (!active) return;
       setAvailability(avail);
-      setAppointments(appts.filter((a) => a.doctorId === DOCTOR_ID));
+      setAppointments(appts.filter((a) => a.doctorId === doctorId));
       setConfig({ clinicSettings: settings, appointmentTypes: types.filter((t) => t.isActive) });
       setLoading(false);
     })();
     return () => {
       active = false;
     };
-  }, []);
+  }, [doctorId]);
 
   // DAYS runs Mon→Sun, so column i is Monday + i days.
   const weekStart = useMemo(() => mondayOfCurrentWeek(), []);
@@ -130,19 +138,19 @@ export default function DoctorAvailabilityPage() {
   );
 
   const persist = useCallback(async (dayOfWeek: number, openTimes: string[]) => {
-    if (!config) return;
-    const windows = mergeSlotsIntoWindows(DOCTOR_ID, dayOfWeek, openTimes, config);
+    if (!config || !doctorId) return;
+    const windows = mergeSlotsIntoWindows(doctorId, dayOfWeek, openTimes, config);
     setSavingDay(dayOfWeek);
     try {
-      await setDoctorDayAvailability(DOCTOR_ID, dayOfWeek, windows);
-      const fresh = await getDoctorAvailability(DOCTOR_ID);
+      await setDoctorDayAvailability("me", dayOfWeek, windows);
+      const fresh = await getDoctorAvailability();
       setAvailability(fresh);
     } catch {
       toast.error("Couldn't save that change. Try again.");
     } finally {
       setSavingDay(null);
     }
-  }, [config]);
+  }, [config, doctorId]);
 
   const toggleSlot = useCallback(
     (dayOfWeek: number, time: string) => {
@@ -170,13 +178,30 @@ export default function DoctorAvailabilityPage() {
     [openTimesFor, persist, times],
   );
 
-  if (loading) {
+  // Front desk and admin have no diary of their own. Reaching these screens is
+  // a navigation mistake, not an error — say so rather than rendering an empty
+  // week that looks like a doctor with nothing booked.
+  if (ready && !doctorId) {
     return (
       <div className="px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-2xl rounded-surface bg-slate-100 p-6 text-center">
+          <h1 className="text-base font-semibold text-slate-900">This screen is for doctors</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Your account isn&apos;t linked to a doctor record, so there is no diary to show.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!ready || loading) {
+    return (
+      <div className="relative px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-6xl animate-pulse space-y-4 rounded-surface bg-slate-100 p-4 sm:p-5">
           <div className="h-8 w-56 rounded-lg bg-slate-200" />
           <div className="h-[34rem] rounded-xl bg-slate-200" />
         </div>
+        <LoadingOverlay label="Loading availability…" />
       </div>
     );
   }

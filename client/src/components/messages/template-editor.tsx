@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, History, Info, RotateCcw, Save, X } from "lucide-react";
+import { AlertTriangle, History, Info, Loader2, RotateCcw, Save, X } from "lucide-react";
 import { updateMessageTemplate, revertMessageTemplate } from "@/lib/api";
 import {
   hasBlockingIssue,
@@ -55,6 +55,7 @@ export function TemplateEditor({
   const [emailSubject, setEmailSubject] = useState(template.emailSubject);
   const [patientId, setPatientId] = useState("");
   const [saving, setSaving] = useState(false);
+  const [restoringVersion, setRestoringVersion] = useState<number | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -148,9 +149,13 @@ export function TemplateEditor({
   }
 
   async function handleRevert(version: number) {
+    if (saving) return;
     setSaving(true);
-    const updated = await revertMessageTemplate(template.type, version, savedBy);
-    setSaving(false);
+    setRestoringVersion(version);
+    const updated = await revertMessageTemplate(template.type, version, savedBy).finally(() => {
+      setSaving(false);
+      setRestoringVersion(null);
+    });
     if (updated) {
       setBody(updated.body);
       setEmailSubject(updated.emailSubject);
@@ -371,9 +376,14 @@ export function TemplateEditor({
                         <button
                           type="button"
                           onClick={() => void handleRevert(rev.version)}
-                          className="flex items-center gap-1 text-[11px] font-semibold text-teal-700 transition hover:text-teal-900"
+                          disabled={saving}
+                          className="flex items-center gap-1 text-[11px] font-semibold text-teal-700 transition hover:text-teal-900 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          <RotateCcw className="h-3 w-3" />
+                          {restoringVersion === rev.version ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <RotateCcw className="h-3 w-3" />
+                          )}
                           Restore
                         </button>
                       </div>
@@ -427,7 +437,11 @@ export function TemplateEditor({
                 disabled={blocked || !dirty || saving}
                 className="inline-flex items-center gap-2 rounded-full bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
               >
-                <Save className="h-4 w-4" />
+                {saving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
                 {saving ? "Saving…" : "Save wording"}
               </button>
             </div>

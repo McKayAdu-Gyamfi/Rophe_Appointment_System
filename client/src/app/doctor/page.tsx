@@ -18,11 +18,19 @@ import { availabilityLabel, weekDays } from "@/lib/schedule";
 import { AppointmentDetailDialog } from "@/components/appointment-detail-dialog";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { PanelHeader, PanelLink, Pill } from "@/components/dashboard/panel";
+import { useAuth } from "@/lib/role-context";
 import { cn } from "@/lib/utils";
+import { LoadingOverlay } from "@/components/loading";
 
-const DOCTOR_ID = "doc-1";
-
+/**
+ * Whose diary this is comes from the session, never a constant. The invite
+ * flow creates real doctor accounts, so a hardcoded id meant a new joiner
+ * opened Dr. Mensah's diary. Availability is fetched as "me" — the server
+ * resolves the doctor from the session rather than trusting an id from here.
+ */
 export default function DoctorDashboardPage() {
+  const { session, ready } = useAuth();
+  const doctorId = session?.doctorId;
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [availability, setAvailability] = useState<DoctorAvailability[]>([]);
@@ -30,15 +38,16 @@ export default function DoctorDashboardPage() {
   const [selected, setSelected] = useState<Appointment | null>(null);
 
   useEffect(() => {
+    if (!doctorId) return;
     let active = true;
     (async () => {
       const [appts, pts, avail] = await Promise.all([
         getAppointments(),
         getPatients(),
-        getDoctorAvailability(DOCTOR_ID),
+        getDoctorAvailability(),
       ]);
       if (!active) return;
-      setAppointments(appts.filter((a) => a.doctorId === DOCTOR_ID));
+      setAppointments(appts.filter((a) => a.doctorId === doctorId));
       setPatients(pts);
       setAvailability(avail);
       setLoading(false);
@@ -46,7 +55,7 @@ export default function DoctorDashboardPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [doctorId]);
 
   const patientMap = useMemo(() => {
     const m = new Map<string, Patient>();
@@ -111,9 +120,25 @@ export default function DoctorDashboardPage() {
 
   const nextUp = todays.find((a) => a.status === "booked" || a.status === "confirmed");
 
-  if (loading) {
+  // Front desk and admin have no diary of their own. Reaching these screens is
+  // a navigation mistake, not an error — say so rather than rendering an empty
+  // week that looks like a doctor with nothing booked.
+  if (ready && !doctorId) {
     return (
       <div className="px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-2xl rounded-surface bg-slate-100 p-6 text-center">
+          <h1 className="text-base font-semibold text-slate-900">This screen is for doctors</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Your account isn&apos;t linked to a doctor record, so there is no diary to show.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!ready || loading) {
+    return (
+      <div className="relative px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-5xl animate-pulse space-y-4 rounded-surface bg-slate-100 p-4 sm:p-5">
           <div className="h-8 w-64 rounded-lg bg-slate-200" />
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
@@ -123,6 +148,7 @@ export default function DoctorDashboardPage() {
           </div>
           <div className="h-80 rounded-xl bg-slate-200" />
         </div>
+        <LoadingOverlay label="Loading your day…" />
       </div>
     );
   }
