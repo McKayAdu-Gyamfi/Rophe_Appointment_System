@@ -26,6 +26,7 @@ import { CLINIC } from "@/lib/clinic";
 import { dateKey, fmtLongDate, fmtTime } from "@/lib/format";
 import { bookableSlots } from "@/lib/schedule";
 import { cn } from "@/lib/utils";
+import { LoadingOverlay } from "@/components/loading";
 
 type Panel = "none" | "reschedule" | "cancel";
 
@@ -140,11 +141,12 @@ export default function PatientAppointmentPage() {
 
   if (loading) {
     return (
-      <div className="px-4 py-10">
+      <div className="relative px-4 py-10">
         <div className="mx-auto max-w-md animate-pulse space-y-4">
           <div className="h-40 rounded-2xl bg-slate-200" />
           <div className="h-56 rounded-2xl bg-slate-200" />
         </div>
+        <LoadingOverlay label="Loading your appointment…" />
       </div>
     );
   }

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
-import { LogOut, PanelLeftClose, PanelLeftOpen, Phone } from "lucide-react";
+import { Loader2, LogOut, PanelLeftClose, PanelLeftOpen, Phone } from "lucide-react";
+import { toast } from "sonner";
 import { CLINIC } from "@/lib/clinic";
 import { useAuth, useRole } from "@/lib/role-context";
 import { NAV_BY_ROLE, LANDING_BY_ROLE } from "@/lib/nav";
@@ -40,6 +41,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const items = NAV_BY_ROLE[role];
   const [collapsed, setCollapsed] = useState(readStoredCollapsed);
+  const [signingOut, setSigningOut] = useState(false);
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed((prev) => {
@@ -55,9 +57,18 @@ export function Sidebar() {
 
   if (items.length === 0) return null;
 
-  function handleSignOut() {
-    signOut();
-    router.replace("/login");
+  // Wait for the server to end the session before leaving: the login page
+  // sends anyone it still thinks is signed in straight back into the app.
+  async function handleSignOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await signOut();
+      router.replace("/login");
+    } catch {
+      setSigningOut(false);
+      toast.error("Couldn't sign out. Check your connection and try again.");
+    }
   }
 
   return (
@@ -175,16 +186,21 @@ export function Sidebar() {
 
         <button
           type="button"
-          onClick={handleSignOut}
+          onClick={() => void handleSignOut()}
+          disabled={signingOut}
           aria-label={collapsed ? "Sign out" : undefined}
           title={collapsed ? "Sign out" : undefined}
           className={cn(
-            "flex w-full items-center gap-3 rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-slate-900",
+            "flex w-full items-center gap-3 rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-slate-900 disabled:cursor-wait",
             collapsed ? "justify-center px-3" : "px-3.5",
           )}
         >
-          <LogOut className="h-5 w-5 shrink-0 text-slate-400" />
-          {!collapsed && "Sign Out"}
+          {signingOut ? (
+            <Loader2 className="h-5 w-5 shrink-0 animate-spin text-slate-400" />
+          ) : (
+            <LogOut className="h-5 w-5 shrink-0 text-slate-400" />
+          )}
+          {!collapsed && (signingOut ? "Signing out…" : "Sign Out")}
         </button>
       </div>
     </aside>

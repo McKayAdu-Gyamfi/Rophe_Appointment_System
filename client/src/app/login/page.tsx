@@ -44,13 +44,14 @@ export default function LoginPage() {
 
     setSubmitting(true);
     const result = await signIn(email, password);
-    setSubmitting(false);
 
     if (!result.ok) {
+      setSubmitting(false);
       setError(result.error ?? "Sign in failed.");
       return;
     }
     // Role decides the landing page; the provider has the session by now.
+    // The spinner stays up until the dashboard replaces this page.
     // Use the session directly since result.session is returned.
     const role = result.session?.role ?? "front-desk";
     router.replace(LANDING_BY_ROLE[role]);
@@ -205,7 +206,10 @@ export default function LoginPage() {
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-800 px-4 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Signing in…
+                </>
               ) : (
                 <>
                   Sign in to dashboard

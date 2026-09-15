@@ -41,6 +41,7 @@ import { fmtDate, fmtLongDate, fmtTime, initials } from "@/lib/format";
 import { buildDaySlots, forDoctor } from "@/lib/schedule";
 import { useRole } from "@/lib/role-context";
 import { cn } from "@/lib/utils";
+import { LoadingOverlay } from "@/components/loading";
 
 export default function PendingRequestsPage() {
   const { role } = useRole();
@@ -53,6 +54,7 @@ export default function PendingRequestsPage() {
   const [config, setConfig] = useState<ScheduleConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingDecision, setPendingDecision] = useState<RequestDecision | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -132,6 +134,7 @@ export default function PendingRequestsPage() {
     async (request: PatientRequest, decision: RequestDecision) => {
       const patient = patientMap.get(request.patientId);
       setPendingId(request.id);
+      setPendingDecision(decision);
       try {
         const updated = await respondToRequest(request.id, decision);
         if (!updated) {
@@ -179,6 +182,7 @@ export default function PendingRequestsPage() {
         toast.error("Something went wrong. Try again.");
       } finally {
         setPendingId(null);
+        setPendingDecision(null);
       }
     },
     [patientMap],
@@ -186,12 +190,13 @@ export default function PendingRequestsPage() {
 
   if (loading) {
     return (
-      <div className="px-4 py-10 sm:px-6 lg:px-8">
+      <div className="relative px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-4xl animate-pulse space-y-4 rounded-surface bg-slate-100 p-4 sm:p-5">
           <div className="h-8 w-56 rounded-lg bg-slate-200" />
           <div className="h-40 rounded-xl bg-slate-200" />
           <div className="h-40 rounded-xl bg-slate-200" />
         </div>
+        <LoadingOverlay label="Loading requests…" />
       </div>
     );
   }
@@ -232,7 +237,7 @@ export default function PendingRequestsPage() {
                     patient={patientMap.get(request.patientId)}
                     appointment={appointmentMap.get(request.appointmentId)}
                     conflict={conflictFor(request)}
-                    busy={pendingId === request.id}
+                    busyDecision={pendingId === request.id ? pendingDecision : null}
                     disabled={pendingId !== null}
                     canAct={canAct}
                     onRespond={(decision) => void respond(request, decision)}
@@ -299,7 +304,7 @@ function RequestCard({
   patient,
   appointment,
   conflict,
-  busy,
+  busyDecision,
   disabled,
   canAct,
   onRespond,
@@ -308,7 +313,7 @@ function RequestCard({
   patient?: Patient;
   appointment?: Appointment;
   conflict: string | null;
-  busy: boolean;
+  busyDecision: RequestDecision | null;
   disabled: boolean;
   canAct: boolean;
   onRespond: (decision: RequestDecision) => void;
@@ -427,7 +432,11 @@ function RequestCard({
             disabled={disabled}
             className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+            {busyDecision === "confirmed" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Check className="h-4 w-4" />
+            )}
             Confirm
           </button>
           <button
@@ -436,7 +445,11 @@ function RequestCard({
             disabled={disabled}
             className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <X className="h-4 w-4" />
+            {busyDecision === "declined" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <X className="h-4 w-4" />
+            )}
             Decline
           </button>
           <p className="ml-auto self-center text-xs text-slate-400">

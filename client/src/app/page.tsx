@@ -32,6 +32,7 @@ import { ClinicSchedulePanel } from "@/components/dashboard/clinic-schedule-pane
 import { ActivityPanel } from "@/components/dashboard/activity-panel";
 import { RecallPanel } from "@/components/dashboard/recall-panel";
 import { buildVisitSummaries, needsRecall, RECALL_MONTHS } from "@/lib/visits";
+import { LoadingOverlay } from "@/components/loading";
 
 // ---------------------------------------------------------------------------
 // Front-desk dashboard.
@@ -353,7 +354,7 @@ export default function DashboardPage() {
 
 function DashboardSkeleton() {
   return (
-    <div className="px-4 sm:px-6 lg:px-8">
+    <div className="relative px-4 sm:px-6 lg:px-8">
       <div className="grid animate-pulse items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-5 rounded-surface bg-slate-100 p-5">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -373,6 +374,7 @@ function DashboardSkeleton() {
           <div className="h-64 rounded-panel bg-slate-100" />
         </div>
       </div>
+      <LoadingOverlay label="Loading dashboard…" />
     </div>
   );
 }

@@ -20,6 +20,7 @@ import { StatCard } from "@/components/dashboard/stat-card";
 import { PanelHeader, PanelLink, Pill } from "@/components/dashboard/panel";
 import { useAuth } from "@/lib/role-context";
 import { cn } from "@/lib/utils";
+import { LoadingOverlay } from "@/components/loading";
 
 /**
  * Whose diary this is comes from the session, never a constant. The invite
@@ -137,7 +138,7 @@ export default function DoctorDashboardPage() {
 
   if (!ready || loading) {
     return (
-      <div className="px-4 py-10 sm:px-6 lg:px-8">
+      <div className="relative px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-5xl animate-pulse space-y-4 rounded-surface bg-slate-100 p-4 sm:p-5">
           <div className="h-8 w-64 rounded-lg bg-slate-200" />
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
@@ -147,6 +148,7 @@ export default function DoctorDashboardPage() {
           </div>
           <div className="h-80 rounded-xl bg-slate-200" />
         </div>
+        <LoadingOverlay label="Loading your day…" />
       </div>
     );
   }

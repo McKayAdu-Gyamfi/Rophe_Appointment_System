@@ -29,7 +29,7 @@ interface AuthContextValue {
   /** False until the stored session has been read — guards redirect flashes. */
   ready: boolean;
   signIn: (email: string, password: string) => Promise<{ ok: boolean; session?: StaffSession; error?: string }>;
-  signOut: () => void;
+  signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);

@@ -27,6 +27,7 @@ import { useAuth } from "@/lib/role-context";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { InviteStaffDialog } from "@/components/staff/invite-staff-dialog";
 import { cn } from "@/lib/utils";
+import { LoadingOverlay } from "@/components/loading";
 
 // ---------------------------------------------------------------------------
 // Staff accounts.
@@ -60,6 +61,7 @@ export default function StaffPage() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [busyAction, setBusyAction] = useState<"resend" | "revoke" | null>(null);
   /** token → the account it belongs to, for links generated this session. */
   const [links, setLinks] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState<string | null>(null);
@@ -123,6 +125,7 @@ export default function StaffPage() {
   const handleResend = useCallback(
     async (id: string) => {
       setBusyId(id);
+      setBusyAction("resend");
       try {
         const result = await resendStaffInvitation(id);
         if (!result.ok) {
@@ -142,6 +145,7 @@ export default function StaffPage() {
   const handleRevoke = useCallback(
     async (user: StaffSession) => {
       setBusyId(user.id);
+      setBusyAction("revoke");
       try {
         const result = await revokeStaffInvitation(user.id);
         if (!result.ok) {
@@ -164,12 +168,13 @@ export default function StaffPage() {
 
   if (loading) {
     return (
-      <div className="px-4 py-10 sm:px-6 lg:px-8">
+      <div className="relative px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-5xl animate-pulse space-y-4 rounded-surface bg-slate-100 p-4 sm:p-5">
           <div className="h-8 w-48 rounded-lg bg-slate-200" />
           <div className="h-24 rounded-xl bg-slate-200" />
           <div className="h-72 rounded-xl bg-slate-200" />
         </div>
+        <LoadingOverlay label="Loading staff…" />
       </div>
     );
   }
@@ -262,7 +267,7 @@ export default function StaffPage() {
                             title="Issue a new link and invalidate the old one"
                             className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200 disabled:opacity-50"
                           >
-                            {busyId === user.id ? (
+                            {busyId === user.id && busyAction === "resend" ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             ) : (
                               <RotateCw className="h-3.5 w-3.5" />
@@ -277,7 +282,11 @@ export default function StaffPage() {
                             title="Withdraw invitation"
                             className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            {busyId === user.id && busyAction === "revoke" ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
                           </button>
                         </>
                       )}

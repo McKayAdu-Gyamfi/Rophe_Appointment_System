@@ -17,6 +17,7 @@ import {
 } from "@/components/schedule-views";
 import { useAuth } from "@/lib/role-context";
 import { cn } from "@/lib/utils";
+import { LoadingOverlay } from "@/components/loading";
 
 /**
  * Whose diary this is comes from the session, never a constant. The invite
@@ -99,12 +100,13 @@ export default function DoctorSchedulePage() {
 
   if (!ready || loading) {
     return (
-      <div className="px-4 py-10 sm:px-6 lg:px-8">
+      <div className="relative px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl animate-pulse space-y-4 rounded-surface bg-slate-100 p-4 sm:p-5">
           <div className="h-8 w-56 rounded-lg bg-slate-200" />
           <div className="h-11 rounded-xl bg-slate-200" />
           <div className="h-[32rem] rounded-xl bg-slate-200" />
         </div>
+        <LoadingOverlay label="Loading schedule…" />
       </div>
     );
   }

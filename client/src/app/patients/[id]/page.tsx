@@ -43,6 +43,7 @@ import { age, fmtDate, fmtLongDate, fmtTime, initials, startOfDay } from "@/lib/
 import { useRole } from "@/lib/role-context";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { cn } from "@/lib/utils";
+import { LoadingOverlay } from "@/components/loading";
 
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -112,12 +113,13 @@ export default function PatientDetailPage() {
 
   if (loading) {
     return (
-      <div className="px-4 py-10 sm:px-6 lg:px-8">
+      <div className="relative px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-5xl animate-pulse space-y-4 rounded-surface bg-slate-100 p-4 sm:p-5">
           <div className="h-8 w-56 rounded-lg bg-slate-200" />
           <div className="h-40 rounded-xl bg-slate-200" />
           <div className="h-72 rounded-xl bg-slate-200" />
         </div>
+        <LoadingOverlay label="Loading patient record…" />
       </div>
     );
   }

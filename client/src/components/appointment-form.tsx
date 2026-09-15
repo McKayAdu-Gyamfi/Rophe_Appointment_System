@@ -35,6 +35,7 @@ import {
 import { isFirstVisit as hasNeverAttended } from "@/lib/visits";
 import { NewPatientDialog } from "./new-patient-dialog";
 import { cn } from "@/lib/utils";
+import { LoadingOverlay } from "@/components/loading";
 
 // ---------------------------------------------------------------------------
 // Book / reschedule appointment (PRD Section 3.1 #5, Section 6 #1).
@@ -274,6 +275,7 @@ export function AppointmentForm({
           });
 
       if (!saved) {
+        setSubmitting(false);
         setError("Couldn't save that appointment. Try again.");
         return;
       }
@@ -293,19 +295,22 @@ export function AppointmentForm({
       });
 
       toast.success(`Confirmation sent via ${channelLabel}`, { description: preview });
+      // No reset on success: the spinner stays up until the calendar loads.
       router.push("/appointments");
     } catch {
-      setError("Something went wrong. Try again.");
-    } finally {
       setSubmitting(false);
+      setError("Something went wrong. Try again.");
     }
   }
 
   if (loading) {
     return (
-      <div className="animate-pulse space-y-4">
-        <div className="h-24 rounded-xl bg-slate-200" />
-        <div className="h-64 rounded-xl bg-slate-200" />
+      <div className="relative">
+        <div className="animate-pulse space-y-4">
+          <div className="h-24 rounded-xl bg-slate-200" />
+          <div className="h-64 rounded-xl bg-slate-200" />
+        </div>
+        <LoadingOverlay label="Loading booking details…" className="top-20" />
       </div>
     );
   }

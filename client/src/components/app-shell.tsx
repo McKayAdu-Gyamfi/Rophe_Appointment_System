@@ -2,12 +2,12 @@
 
 import { useEffect, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/role-context";
 import { TopBar } from "./top-bar";
 import { Sidebar } from "./sidebar";
 import { MobileNav } from "./mobile-nav";
 import { AppFooter } from "./app-footer";
+import { LoadingScreen } from "@/components/loading";
 
 // Routes reachable without signing in. The patient portal is deliberately
 // open — patients arrive from a link on their phone and have no account. So is
@@ -42,10 +42,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   // staff screens flash before the redirect fires.
   if (!ready || (!session && !publicRoute)) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white text-sm text-slate-500">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Loading…
-      </div>
+      <LoadingScreen className="min-h-screen bg-white" />
     );
   }
 
