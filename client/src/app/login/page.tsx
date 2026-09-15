@@ -13,6 +13,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { CLINIC } from "@/lib/clinic";
+import { DEMO_ACCOUNTS, DEMO_PASSWORD, SHOW_DEMO_ACCOUNTS } from "@/lib/demo-accounts";
 import { LANDING_BY_ROLE } from "@/lib/nav";
 import { useAuth } from "@/lib/role-context";
 
@@ -31,8 +32,6 @@ export default function LoginPage() {
   useEffect(() => {
     if (ready && session) router.replace(LANDING_BY_ROLE[session.role]);
   }, [ready, session, router]);
-
-  // Demo accounts removed
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -216,7 +215,47 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Demo accounts removed */}
+          {/* Demo accounts — seeded logins, hidden in production unless switched on */}
+          {SHOW_DEMO_ACCOUNTS && (
+            <div className="mt-6 rounded-2xl border border-dashed border-slate-200 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Demo accounts
+              </p>
+              <ul className="mt-2.5 space-y-1.5">
+                {DEMO_ACCOUNTS.map((account) => (
+                  <li key={account.email}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmail(account.email);
+                        setPassword(DEMO_PASSWORD);
+                        setError(null);
+                      }}
+                      className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition hover:bg-brand-50"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-slate-800">
+                          {account.fullName}
+                        </span>
+                        <span className="block truncate text-xs text-slate-500">
+                          {account.email}
+                        </span>
+                      </span>
+                      <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                        {account.role === "doctor" ? "Doctor" : "Front desk"}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2.5 px-2.5 text-xs text-slate-400">
+                Tap an account to fill the form — password{" "}
+                <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[11px] text-slate-600">
+                  {DEMO_PASSWORD}
+                </code>
+              </p>
+            </div>
+          )}
 
           <div className="mt-6 border-t border-slate-100 pt-4 text-center text-xs text-slate-500">
             Patients don&apos;t sign in — they open the link sent to their phone.
